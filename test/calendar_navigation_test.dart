@@ -1,0 +1,117 @@
+import 'dart:convert';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:rgn_news/main.dart';
+import 'package:rgn_news/models/lnd_data.dart';
+import 'package:rgn_news/services/lnd_data_service.dart';
+
+void main() {
+  testWidgets('le frecce cambiano giornata e mostrano il risultato', (
+    tester,
+  ) async {
+    final service = LndDataService(
+      baseUrl: 'https://test.example/',
+      client: MockClient((request) async {
+        final round = int.parse(
+          request.url.queryParameters['round_number'] ?? '8',
+        );
+        return http.Response(
+          jsonEncode({
+            'updated_at': '2026-10-15T18:00:00Z',
+            'source': 'https://test.example/',
+            'matchday': {'number': round, 'leg': 'first'},
+            'standings': [],
+            'fixtures': [
+              {
+                'id': '$round',
+                'matchday': 'first:$round',
+                'round_number': round,
+                'leg': 'first',
+                'date': '2026-10-11',
+                'time': '15:00',
+                'venue': '',
+                'address': '',
+                'home_team': 'Reggina 1914',
+                'home_logo_url': null,
+                'away_team': 'Avversaria',
+                'away_logo_url': null,
+                'home_score': round == 7 ? 1 : null,
+                'away_score': round == 7 ? 1 : null,
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: LndFixturesPage(service: service)),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Andata · 8ª giornata'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.chevron_left_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('Andata · 7ª giornata'), findsOneWidget);
+    expect(find.text('1-1'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.chevron_right_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('Andata · 8ª giornata'), findsOneWidget);
+
+    service.close();
+  });
+
+  testWidgets('la pagina della partita offre un tasto indietro visibile', (
+    tester,
+  ) async {
+    const fixture = LeagueFixture(
+      id: '1',
+      matchday: 'first:8',
+      roundNumber: 8,
+      leg: 'first',
+      date: '2026-10-18',
+      time: '15:00',
+      venue: 'Granillo',
+      address: 'Reggio Calabria',
+      homeTeam: 'Reggina 1914',
+      homeLogoUrl: null,
+      awayTeam: 'Avversaria',
+      awayLogoUrl: null,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const MatchDetailsPage(
+                    fixture: fixture,
+                    isLoading: false,
+                  ),
+                ),
+              ),
+              child: const Text('Apri partita'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Apri partita'));
+    await tester.pumpAndSettle();
+    expect(find.text('Prossima partita'), findsOneWidget);
+    await tester.tap(find.byTooltip('Indietro'));
+    await tester.pumpAndSettle();
+    expect(find.text('Apri partita'), findsOneWidget);
+  });
+}

@@ -1,0 +1,1 @@
+"""RGN News backend."""

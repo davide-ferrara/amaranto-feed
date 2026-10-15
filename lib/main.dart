@@ -1,0 +1,2373 @@
+import 'package:flutter/material.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'models/news_article.dart';
+import 'models/lnd_data.dart';
+import 'services/lnd_data_service.dart';
+import 'services/news_feed_service.dart';
+
+const _ink = Color(0xFF201B1D);
+const _mutedInk = Color(0xFF766D70);
+const _surface = Color(0xFFFFFBFA);
+const _page = Color(0xFFF5F1F0);
+const _accent = Color(0xFF841230);
+const _playoffOrange = Color(0xFFE58436);
+const _promotionGreen = Color(0xFF3E9957);
+const _goldLight = Color(0xFFE4CF7E);
+const _goldDark = Color(0xFFB26D26);
+const _goldGradient = LinearGradient(
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+  colors: [_goldLight, _goldDark],
+);
+const _amarantoGradient = LinearGradient(
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+  colors: [_accent, Color(0xFF3F091B)],
+);
+const _line = Color(0xFFE8DEDF);
+
+void main() {
+  runApp(const RgnNewsApp());
+}
+
+class RgnNewsApp extends StatefulWidget {
+  const RgnNewsApp({super.key});
+
+  @override
+  State<RgnNewsApp> createState() => _RgnNewsAppState();
+}
+
+class _RgnNewsAppState extends State<RgnNewsApp> {
+  ThemeMode _themeMode = ThemeMode.system;
+
+  @override
+  void initState() {
+    super.initState();
+    SharedPreferences.getInstance().then((prefs) {
+      if (mounted) {
+        final stored = prefs.getString('theme_mode');
+        final legacyDark = prefs.getBool('dark_mode') ?? false;
+        setState(() {
+          _themeMode = stored == 'light'
+              ? ThemeMode.light
+              : stored == 'dark' || (stored == null && legacyDark)
+              ? ThemeMode.dark
+              : ThemeMode.system;
+        });
+      }
+    });
+  }
+
+  Future<void> _setThemeMode(ThemeMode value) async {
+    setState(() => _themeMode = value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('theme_mode', value.name);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lightColors = ColorScheme.fromSeed(
+      seedColor: _accent,
+      brightness: Brightness.light,
+      surface: _surface,
+      onSurface: _ink,
+      outline: _line,
+    );
+    final darkColors = ColorScheme.fromSeed(
+      seedColor: _accent,
+      brightness: Brightness.dark,
+      surface: const Color(0xFF21191D),
+      onSurface: const Color(0xFFF5ECEF),
+      outline: const Color(0xFF58464D),
+    );
+
+    return MaterialApp(
+      title: 'RGN News',
+      debugShowCheckedModeBanner: false,
+      themeMode: _themeMode,
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: lightColors,
+        scaffoldBackgroundColor: _page,
+        textTheme: ThemeData.light().textTheme.apply(
+          bodyColor: _ink,
+          displayColor: _ink,
+        ),
+      ),
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.dark,
+        colorScheme: darkColors,
+        scaffoldBackgroundColor: const Color(0xFF171215),
+        cardColor: const Color(0xFF21191D),
+        textTheme: ThemeData.dark().textTheme.apply(
+          bodyColor: const Color(0xFFF5ECEF),
+          displayColor: const Color(0xFFF5ECEF),
+        ),
+      ),
+      home: AppShell(themeMode: _themeMode, onThemeModeChanged: _setThemeMode),
+    );
+  }
+}
+
+class AppShell extends StatefulWidget {
+  const AppShell({
+    required this.themeMode,
+    required this.onThemeModeChanged,
+    super.key,
+  });
+  final ThemeMode themeMode;
+  final ValueChanged<ThemeMode> onThemeModeChanged;
+
+  @override
+  State<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends State<AppShell> {
+  static const _feedIndex = 2;
+  int _selectedIndex = _feedIndex;
+  final GlobalKey<_FeedPageState> _feedKey = GlobalKey<_FeedPageState>();
+  late final PageController _pageController = PageController(
+    initialPage: _feedIndex,
+  );
+  final LndDataService _lndService = LndDataService();
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    _lndService.close();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: PageView(
+          controller: _pageController,
+          onPageChanged: (index) => setState(() => _selectedIndex = index),
+          children: [
+            LndStandingsPage(service: _lndService),
+            LndFixturesPage(service: _lndService),
+            FeedPage(key: _feedKey, lndService: _lndService),
+            const PlaceholderPage(
+              icon: Icons.forum_outlined,
+              title: 'Chat',
+              description: 'Lo spazio della community verrà aggiunto in una fase successiva.',
+            ),
+            ProfilePage(
+              themeMode: widget.themeMode,
+              onThemeModeChanged: widget.onThemeModeChanged,
+            ),
+          ],
+        ),
+      ),
+      bottomNavigationBar: _BottomNavBar(
+        selectedIndex: _selectedIndex,
+        onSelected: _onNavigationSelected,
+      ),
+    );
+  }
+
+  Future<void> _onNavigationSelected(int index) async {
+    await _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+    );
+    if (index == _feedIndex) {
+      await _feedKey.currentState?.scrollToTopAndRefresh();
+    }
+  }
+}
+
+class _BottomNavBar extends StatelessWidget {
+  const _BottomNavBar({required this.selectedIndex, required this.onSelected});
+
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+
+  static const _items = [
+    (Icons.leaderboard_outlined, Icons.leaderboard_rounded, 'Classifica'),
+    (Icons.calendar_month_outlined, Icons.calendar_month_rounded, 'Calendario'),
+    (Icons.dynamic_feed_outlined, Icons.dynamic_feed_rounded, 'Feed'),
+    (Icons.forum_outlined, Icons.forum_rounded, 'Chat'),
+    (Icons.person_outline_rounded, Icons.person_rounded, 'Profilo'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(gradient: _amarantoGradient),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 76,
+          child: Row(
+            children: [
+              for (var index = 0; index < _items.length; index++)
+                Expanded(
+                  child: _BottomNavItem(
+                    icon: _items[index].$1,
+                    selectedIcon: _items[index].$2,
+                    label: _items[index].$3,
+                    selected: index == selectedIndex,
+                    emphasized: _items[index].$3 == 'Feed',
+                    onTap: () => onSelected(index),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BottomNavItem extends StatelessWidget {
+  const _BottomNavItem({
+    required this.icon,
+    required this.selectedIcon,
+    required this.label,
+    required this.selected,
+    required this.emphasized,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final IconData selectedIcon;
+  final String label;
+  final bool selected;
+  final bool emphasized;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 54,
+                height: 32,
+                decoration: selected
+                    ? const BoxDecoration(
+                        gradient: _goldGradient,
+                        borderRadius: BorderRadius.all(Radius.circular(18)),
+                      )
+                    : null,
+                alignment: Alignment.center,
+                child: Icon(
+                  selected ? selectedIcon : icon,
+                  size: emphasized ? 29 : 23,
+                  color: selected ? _accent : const Color(0xFFDDBFC7),
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  color: selected ? Colors.white : const Color(0xFFDDBFC7),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class FeedPage extends StatefulWidget {
+  const FeedPage({required this.lndService, super.key});
+
+  final LndDataService lndService;
+
+  @override
+  State<FeedPage> createState() => _FeedPageState();
+}
+
+class _FeedPageState extends State<FeedPage> {
+  final ScrollController _scrollController = ScrollController();
+  late final NewsFeedService _feedService;
+  late Future<List<NewsArticle>> _articles;
+  late Future<LndDataSnapshot> _sportsData;
+  Future<void>? _refreshTask;
+  bool _showMatchBanner = true;
+  double _lastScrollOffset = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _feedService = NewsFeedService();
+    _articles = _feedService.fetchLatest();
+    _sportsData = widget.lndService.load();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _feedService.close();
+    super.dispose();
+  }
+
+  Future<void> scrollToTopAndRefresh() async {
+    if (_scrollController.hasClients) {
+      await _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+      );
+    }
+    await _refreshFromGesture();
+  }
+
+  void _refresh() {
+    setState(() => _articles = _feedService.fetchLatest());
+  }
+
+  Future<void> _refreshFromGesture() {
+    return _refreshTask ??= _performRefresh().whenComplete(() {
+      _refreshTask = null;
+    });
+  }
+
+  Future<void> _performRefresh() async {
+    final refresh = _feedService.fetchLatest();
+    setState(() {
+      _articles = refresh;
+    });
+    await refresh;
+  }
+
+  bool _onScroll(ScrollNotification notification) {
+    if (notification is ScrollUpdateNotification &&
+        notification.scrollDelta != null &&
+        notification.metrics.axis == Axis.vertical) {
+      final nextOffset = notification.metrics.pixels;
+      final movingDown = nextOffset > _lastScrollOffset;
+      if (nextOffset < 24 || !movingDown) {
+        if (!_showMatchBanner) setState(() => _showMatchBanner = true);
+      } else if (_showMatchBanner && nextOffset > 80) {
+        setState(() => _showMatchBanner = false);
+      }
+      _lastScrollOffset = nextOffset;
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<LndDataSnapshot>(
+      future: _sportsData,
+      builder: (context, sportsSnapshot) {
+        final fixture = sportsSnapshot.hasData
+            ? _nextRegginaFixture(sportsSnapshot.data!.fixtures)
+            : null;
+        return Stack(
+          children: [
+            NotificationListener<ScrollNotification>(
+              onNotification: _onScroll,
+              child: RefreshIndicator(
+                color: _accent,
+                backgroundColor: Theme.of(context).colorScheme.surface,
+                onRefresh: _refreshFromGesture,
+                child: ListView(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
+                  children: [
+                    Text(
+                      'Notizie',
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 16),
+                    _NewsFeed(future: _articles, onRetry: _refresh),
+                    const SizedBox(height: 20),
+                    const _NewsAttribution(),
+                  ],
+                ),
+              ),
+            ),
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 12,
+              child: AnimatedSlide(
+                duration: const Duration(milliseconds: 260),
+                curve: Curves.easeInOutCubic,
+                offset: _showMatchBanner ? Offset.zero : const Offset(0, 1.5),
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 180),
+                  opacity: _showMatchBanner ? 1 : 0,
+                  child: IgnorePointer(
+                    ignoring: !_showMatchBanner,
+                    child: MatchMiniBanner(
+                      fixture: fixture,
+                      isLoading:
+                          sportsSnapshot.connectionState ==
+                          ConnectionState.waiting,
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => MatchDetailsPage(
+                            fixture: fixture,
+                            isLoading:
+                                sportsSnapshot.connectionState ==
+                                ConnectionState.waiting,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _NewsFeed extends StatelessWidget {
+  const _NewsFeed({required this.future, required this.onRetry});
+
+  final Future<List<NewsArticle>> future;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<NewsArticle>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 36),
+            child: Center(child: CircularProgressIndicator(color: _accent)),
+          );
+        }
+        if (snapshot.hasError) {
+          return _FeedMessage(
+            icon: Icons.wifi_off_rounded,
+            text: snapshot.error.toString().replaceFirst('Exception: ', ''),
+            action: 'Riprova',
+            onPressed: onRetry,
+          );
+        }
+
+        final articles = snapshot.data ?? const <NewsArticle>[];
+        if (articles.isEmpty) {
+          return _FeedMessage(
+            icon: Icons.article_outlined,
+            text: 'Al momento non ci sono notizie disponibili.',
+            action: 'Aggiorna',
+            onPressed: onRetry,
+          );
+        }
+
+        return Column(
+          children: [
+            for (var index = 0; index < articles.length; index++) ...[
+              if (index > 0) const SizedBox(height: 12),
+              NewsArticleCard(article: articles[index]),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _FeedMessage extends StatelessWidget {
+  const _FeedMessage({
+    required this.icon,
+    required this.text,
+    required this.action,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String text;
+  final String action;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, size: 28, color: _accent),
+          const SizedBox(height: 9),
+          Text(text, textAlign: TextAlign.center),
+          const SizedBox(height: 6),
+          TextButton(onPressed: onPressed, child: Text(action)),
+        ],
+      ),
+    );
+  }
+}
+
+class NewsArticleCard extends StatelessWidget {
+  const NewsArticleCard({required this.article, super.key});
+
+  final NewsArticle article;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Theme.of(context).colorScheme.surface,
+      borderRadius: BorderRadius.circular(23),
+      child: InkWell(
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ArticlePage(article: article),
+          ),
+        ),
+        borderRadius: BorderRadius.circular(23),
+        child: Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(23),
+            border: Border.all(
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (article.imageUrl != null)
+                Image.network(
+                  article.imageUrl!,
+                  height: 156,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) =>
+                      const _NewsImagePlaceholder(),
+                )
+              else
+                const _NewsImagePlaceholder(),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            article.source.toUpperCase(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(
+                                  color: _accent,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.8,
+                                ),
+                          ),
+                        ),
+                        Icon(
+                          Icons.schedule_rounded,
+                          size: 13,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _formatPublishedAt(article.publishedAt),
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      article.title,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(height: 1.22, fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Text(
+                          'Leggi dalla fonte',
+                          style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        SizedBox(width: 3),
+                        Icon(
+                          Icons.open_in_new_rounded,
+                          size: 14,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NewsImagePlaceholder extends StatelessWidget {
+  const _NewsImagePlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 156,
+      width: double.infinity,
+      color: const Color(0xFFF0E7E9),
+      child: const Icon(Icons.newspaper_rounded, size: 38, color: _accent),
+    );
+  }
+}
+
+class ArticlePage extends StatefulWidget {
+  const ArticlePage({required this.article, super.key});
+
+  final NewsArticle article;
+
+  @override
+  State<ArticlePage> createState() => _ArticlePageState();
+}
+
+class _ArticlePageState extends State<ArticlePage> {
+  late final WebViewController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..loadRequest(Uri.parse(widget.article.url));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Notizia'),
+        leading: IconButton(
+          tooltip: 'Indietro',
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: _goBack,
+        ),
+      ),
+      body: SafeArea(child: WebViewWidget(controller: _controller)),
+    );
+  }
+
+  Future<void> _goBack() async {
+    if (await _controller.canGoBack()) {
+      await _controller.goBack();
+    } else if (mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+}
+
+String _formatPublishedAt(DateTime value) {
+  const months = [
+    'gen',
+    'feb',
+    'mar',
+    'apr',
+    'mag',
+    'giu',
+    'lug',
+    'ago',
+    'set',
+    'ott',
+    'nov',
+    'dic',
+  ];
+  final local = value.toLocal();
+  return '${local.day} ${months[local.month - 1]} · ${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+}
+
+LeagueFixture? _nextRegginaFixture(List<LeagueFixture> fixtures) {
+  final regginaFixtures = fixtures.where((fixture) {
+    final home = fixture.homeTeam.toLowerCase();
+    final away = fixture.awayTeam.toLowerCase();
+    return home.contains('reggina') || away.contains('reggina');
+  }).toList();
+  if (regginaFixtures.isEmpty) return null;
+  final today = DateTime.now();
+  final upcoming =
+      regginaFixtures.where((fixture) {
+        final date = _parseFixtureDate(fixture.date);
+        return date != null &&
+            !date.isBefore(DateTime(today.year, today.month, today.day));
+      }).toList()..sort(
+        (a, b) =>
+            _parseFixtureDate(a.date)!.compareTo(_parseFixtureDate(b.date)!),
+      );
+  return upcoming.isNotEmpty ? upcoming.first : regginaFixtures.first;
+}
+
+DateTime? _parseFixtureDate(String value) {
+  final parsed = DateTime.tryParse(value);
+  if (parsed != null) return parsed;
+  final italian = RegExp(r'^(\d{1,2})/(\d{1,2})/(\d{4})$')
+      .firstMatch(value.trim());
+  if (italian == null) return null;
+  return DateTime(
+    int.parse(italian.group(3)!),
+    int.parse(italian.group(2)!),
+    int.parse(italian.group(1)!),
+  );
+}
+
+String _formatFixtureDate(String value) {
+  final parsed = _parseFixtureDate(value);
+  if (parsed == null) return value;
+  const months = [
+    'gen',
+    'feb',
+    'mar',
+    'apr',
+    'mag',
+    'giu',
+    'lug',
+    'ago',
+    'set',
+    'ott',
+    'nov',
+    'dic',
+  ];
+  return '${parsed.day} ${months[parsed.month - 1]} ${parsed.year}';
+}
+
+class MatchMiniBanner extends StatelessWidget {
+  const MatchMiniBanner({
+    required this.fixture,
+    required this.isLoading,
+    required this.onTap,
+    super.key,
+  });
+
+  final LeagueFixture? fixture;
+  final bool isLoading;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final date = fixture == null
+        ? (isLoading ? 'Caricamento partita…' : 'Prossima partita')
+        : '${_formatFixtureDate(fixture!.date)}${fixture!.time.isEmpty ? '' : ' · ${fixture!.time}'}';
+    return Container(
+      height: 70,
+      padding: const EdgeInsets.all(1.5),
+      decoration: BoxDecoration(
+        gradient: _goldGradient,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x30000000),
+            blurRadius: 14,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16.5),
+        clipBehavior: Clip.antiAlias,
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: _amarantoGradient,
+            borderRadius: BorderRadius.circular(16.5),
+          ),
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              child: Row(
+                children: [
+                  _MiniTeam(
+                    logoUrl: fixture?.homeLogoUrl,
+                    initials: _teamInitials(fixture?.homeTeam ?? 'RGN'),
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Text(
+                          fixture == null
+                              ? (isLoading
+                                    ? 'PROSSIMA PARTITA'
+                                    : 'PARTITA NON DISPONIBILE')
+                              : '${fixture!.homeTeam}  ·  ${fixture!.awayTeam}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          date,
+                          style: const TextStyle(
+                            color: Color(0xFFE8D3D8),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 9),
+                  _MiniTeam(
+                    logoUrl: fixture?.awayLogoUrl,
+                    initials: _teamInitials(fixture?.awayTeam ?? '—'),
+                  ),
+                  const SizedBox(width: 7),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    color: Colors.white,
+                    size: 21,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniTeam extends StatelessWidget {
+  const _MiniTeam({required this.logoUrl, required this.initials});
+
+  final String? logoUrl;
+  final String initials;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 38,
+      height: 42,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: logoUrl == null
+          ? Center(
+              child: Text(
+                initials,
+                style: const TextStyle(
+                  color: _accent,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            )
+          : Image.network(
+              logoUrl!,
+              fit: BoxFit.contain,
+              errorBuilder: (_, error, stackTrace) => Center(
+                child: Text(
+                  initials,
+                  style: const TextStyle(
+                    color: _accent,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+    );
+  }
+}
+
+class MatchDetailsPage extends StatelessWidget {
+  const MatchDetailsPage({
+    required this.fixture,
+    required this.isLoading,
+    super.key,
+  });
+
+  final LeagueFixture? fixture;
+  final bool isLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    final venue = fixture == null
+        ? ''
+        : (fixture!.venue.isNotEmpty ? fixture!.venue : fixture!.address);
+    return Scaffold(
+      backgroundColor: _page,
+      appBar: AppBar(
+        title: const Text('Prossima partita'),
+        leading: IconButton(
+          tooltip: 'Indietro',
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+          children: [
+            MatchBanner(fixture: fixture, isLoading: isLoading, onTap: () {}),
+            const SizedBox(height: 20),
+            _MatchInfoTile(
+              icon: Icons.emoji_events_outlined,
+              label: 'Competizione',
+              value: fixture == null
+                  ? 'Serie D · Girone I'
+                  : 'Serie D · Girone I · ${fixture!.roundNumber}ª giornata',
+            ),
+            _MatchInfoTile(
+              icon: Icons.calendar_month_rounded,
+              label: 'Data e orario',
+              value: fixture == null
+                  ? 'In aggiornamento'
+                  : '${_formatFixtureDate(fixture!.date)}${fixture!.time.isEmpty ? '' : ' · ${fixture!.time}'}',
+            ),
+            _MatchInfoTile(
+              icon: Icons.stadium_outlined,
+              label: 'Stadio',
+              value: venue.isEmpty ? 'In aggiornamento' : venue,
+            ),
+            _MatchInfoTile(
+              icon: Icons.location_on_outlined,
+              label: 'Luogo',
+              value: fixture?.address.isNotEmpty == true
+                  ? fixture!.address
+                  : 'Informazioni non disponibili',
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'I dati della partita sono forniti dalla LND e possono essere aggiornati nel corso della stagione.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 12,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MatchInfoTile extends StatelessWidget {
+  const _MatchInfoTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.only(bottom: 10),
+    padding: const EdgeInsets.all(15),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.surface,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+    ),
+    child: Row(
+      children: [
+        Icon(icon, color: _accent, size: 21),
+        const SizedBox(width: 13),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label.toUpperCase(),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                value,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class MatchBanner extends StatelessWidget {
+  const MatchBanner({
+    required this.onTap,
+    required this.fixture,
+    this.isLoading = false,
+    super.key,
+  });
+
+  final VoidCallback onTap;
+  final LeagueFixture? fixture;
+  final bool isLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(26),
+        gradient: _amarantoGradient,
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1D4B2732),
+            blurRadius: 20,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(26),
+          child: Stack(
+            children: [
+              Positioned(
+                right: -35,
+                top: -53,
+                child: Container(
+                  width: 175,
+                  height: 175,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: const Color(0x18FFFFFF),
+                      width: 28,
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 17, 18, 17),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.sports_soccer_rounded,
+                          size: 16,
+                          color: Color(0xFFF2C8D0),
+                        ),
+                        const SizedBox(width: 7),
+                        Expanded(
+                          child: Text(
+                            fixture == null
+                                ? (isLoading
+                                      ? 'SERIE D · CARICAMENTO'
+                                      : 'SERIE D · PROSSIMA PARTITA')
+                                : 'SERIE D · ${fixture!.leg == 'first' ? 'ANDATA' : 'RITORNO'} · ${fixture!.roundNumber}ª GIORNATA',
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(
+                                  color: const Color(0xFFF2DDE1),
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1,
+                                  fontSize: 10,
+                                ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: _goldGradient,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Text(
+                            'LND',
+                            style: TextStyle(
+                              color: Color(0xFF3F091B),
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.6,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _TeamColumn(
+                            initials: _teamInitials(fixture?.homeTeam ?? '—'),
+                            name: fixture?.homeTeam ?? 'In aggiornamento',
+                            alignment: CrossAxisAlignment.start,
+                            logoUrl: fixture?.homeLogoUrl,
+                          ),
+                        ),
+                        Padding(
+                          padding: EdgeInsets.only(bottom: 20),
+                          child: _VersusBadge(),
+                        ),
+                        Expanded(
+                          child: _TeamColumn(
+                            initials: _teamInitials(fixture?.awayTeam ?? '—'),
+                            name: fixture?.awayTeam ?? (isLoading ? '…' : '—'),
+                            alignment: CrossAxisAlignment.end,
+                            logoUrl: fixture?.awayLogoUrl,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 19),
+                    Container(height: 1, color: const Color(0x29FFFFFF)),
+                    const SizedBox(height: 13),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.calendar_today_rounded,
+                          size: 14,
+                          color: Color(0xFFF2C8D0),
+                        ),
+                        const SizedBox(width: 7),
+                        Expanded(
+                          child: Text(
+                            fixture == null
+                                ? (isLoading
+                                      ? 'Recupero dati partita…'
+                                      : 'Dati partita non disponibili')
+                                : '${_formatFixtureDate(fixture!.date)}${fixture!.time.isEmpty ? '' : ' · ${fixture!.time}'}',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                        Icon(
+                          Icons.stadium_outlined,
+                          size: 15,
+                          color: Color(0xFFF2C8D0),
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            fixture == null
+                                ? ''
+                                : (fixture!.venue.isNotEmpty
+                                      ? fixture!.venue
+                                      : fixture!.address),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Color(0xFFE7DADD),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.touch_app_outlined,
+                          size: 14,
+                          color: Color(0xFFDABDC3),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Dettagli della partita',
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: const Color(0xFFDABDC3),
+                                fontWeight: FontWeight.w500,
+                              ),
+                        ),
+                        const Spacer(),
+                        const Icon(
+                          Icons.arrow_forward_rounded,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _teamInitials(String name) {
+  final words = name
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((part) => part.isNotEmpty)
+      .toList();
+  if (words.isEmpty) return '—';
+  if (words.length == 1) {
+    return words.first
+        .substring(0, words.first.length.clamp(0, 3))
+        .toUpperCase();
+  }
+  return words.take(3).map((word) => word[0]).join().toUpperCase();
+}
+
+class _TeamColumn extends StatelessWidget {
+  const _TeamColumn({
+    required this.initials,
+    required this.name,
+    required this.alignment,
+    this.logoUrl,
+  });
+
+  final String initials;
+  final String name;
+  final CrossAxisAlignment alignment;
+  final String? logoUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: alignment,
+      children: [
+        Container(
+          width: 58,
+          height: 64,
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8F1F2),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFE8DADD)),
+          ),
+          child: logoUrl == null
+              ? _TeamInitials(initials: initials)
+              : Padding(
+                  padding: const EdgeInsets.all(5),
+                  child: Image.network(
+                    logoUrl!,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) =>
+                        _TeamInitials(initials: initials),
+                    loadingBuilder: (context, child, progress) =>
+                        progress == null
+                        ? child
+                        : _TeamInitials(initials: initials),
+                  ),
+                ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 11,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.7,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TeamInitials extends StatelessWidget {
+  const _TeamInitials({required this.initials});
+
+  final String initials;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Icon(Icons.shield_outlined, size: 19, color: _accent),
+        const SizedBox(height: 1),
+        Text(
+          initials,
+          style: const TextStyle(
+            color: _accent,
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.4,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _VersusBadge extends StatelessWidget {
+  const _VersusBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 34,
+      height: 34,
+      decoration: BoxDecoration(
+        gradient: _goldGradient,
+        shape: BoxShape.circle,
+        border: Border.all(color: _goldDark),
+      ),
+      child: const Center(
+        child: Text(
+          'VS',
+          style: TextStyle(
+            color: _accent,
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class NewsMockCard extends StatelessWidget {
+  const NewsMockCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(23),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            height: 146,
+            width: double.infinity,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFFE5D7D9), Color(0xFFF4EBEC)],
+              ),
+            ),
+            child: Stack(
+              children: [
+                Positioned(
+                  right: 20,
+                  top: -32,
+                  child: Icon(
+                    Icons.sports_soccer_rounded,
+                    size: 180,
+                    color: Colors.white.withValues(alpha: 0.48),
+                  ),
+                ),
+                Positioned(
+                  left: 16,
+                  top: 15,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.86),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Text(
+                      'IMMAGINE ANTEPRIMA',
+                      style: TextStyle(
+                        color: _accent,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.7,
+                      ),
+                    ),
+                  ),
+                ),
+                const Positioned(
+                  left: 18,
+                  bottom: 13,
+                  child: Icon(
+                    Icons.image_outlined,
+                    size: 25,
+                    color: Color(0xFF886F75),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 15, 16, 17),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'ESEMPIO FEED',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: _accent,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                    const Spacer(),
+                    Icon(
+                      Icons.schedule_rounded,
+                      size: 13,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Anteprima',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  'Qui troverai le ultime notizie sulla Reggina',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    height: 1.22,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Le notizie saranno raccolte dai feed RSS e apriranno la pagina originale della fonte.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class NewsPreviewRow extends StatelessWidget {
+  const NewsPreviewRow({
+    required this.category,
+    required this.title,
+    required this.time,
+    required this.icon,
+    super.key,
+  });
+
+  final String category;
+  final String title;
+  final String time;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1E7E9),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(icon, color: _accent),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  category,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: _accent,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.9,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium
+                      ?.copyWith(fontWeight: FontWeight.w800, height: 1.2),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  time,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Icon(
+            Icons.chevron_right_rounded,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NewsAttribution extends StatelessWidget {
+  const _NewsAttribution();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Text(
+        'Titoli e anteprime dalle fonti · apri ogni articolo sul sito originale',
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.labelSmall
+            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+      ),
+    );
+  }
+}
+
+class LndStandingsPage extends StatefulWidget {
+  const LndStandingsPage({required this.service, super.key});
+  final LndDataService service;
+
+  @override
+  State<LndStandingsPage> createState() => _LndStandingsPageState();
+}
+
+class PlaceholderPage extends StatelessWidget {
+  const PlaceholderPage({
+    required this.icon,
+    required this.title,
+    required this.description,
+    super.key,
+  });
+  final IconData icon;
+  final String title;
+  final String description;
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 82,
+            height: 82,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1E6E8),
+              borderRadius: BorderRadius.circular(28),
+            ),
+            child: Icon(icon, size: 37, color: _accent),
+          ),
+          const SizedBox(height: 22),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.headlineSmall
+                ?.copyWith(fontWeight: FontWeight.w900, letterSpacing: -0.5),
+          ),
+          const SizedBox(height: 9),
+          Text(
+            description,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 18),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(30),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
+            ),
+            child: Text(
+              'IN ARRIVO',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: _accent,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1,
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class ProfilePage extends StatelessWidget {
+  const ProfilePage({
+    required this.themeMode,
+    required this.onThemeModeChanged,
+    super.key,
+  });
+  final ThemeMode themeMode;
+  final ValueChanged<ThemeMode> onThemeModeChanged;
+
+  @override
+  Widget build(BuildContext context) => ListView(
+    padding: const EdgeInsets.fromLTRB(20, 28, 20, 24),
+    children: [
+      Text(
+        'Profilo',
+        style: Theme.of(context).textTheme.headlineSmall
+            ?.copyWith(fontWeight: FontWeight.w900),
+      ),
+      const SizedBox(height: 18),
+      Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: Theme.of(context).colorScheme.outlineVariant,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: RadioGroup<ThemeMode>(
+            groupValue: themeMode,
+            onChanged: (value) {
+              if (value != null) onThemeModeChanged(value);
+            },
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.brightness_6_rounded, color: _accent),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Tema',
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Per impostazione predefinita segue il dispositivo.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                RadioListTile<ThemeMode>(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  value: ThemeMode.system,
+                  activeColor: _accent,
+                  title: const Text('Sistema'),
+                ),
+                RadioListTile<ThemeMode>(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  value: ThemeMode.light,
+                  activeColor: _accent,
+                  title: const Text('Chiaro'),
+                ),
+                RadioListTile<ThemeMode>(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  value: ThemeMode.dark,
+                  activeColor: _accent,
+                  title: const Text('Scuro'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
+class _LndStandingsPageState extends State<LndStandingsPage> {
+  late Future<LndDataSnapshot> _data;
+  @override
+  void initState() {
+    super.initState();
+    _data = widget.service.load();
+  }
+
+  Future<void> _refresh() async {
+    final future = widget.service.load(forceRefresh: true);
+    setState(() => _data = future);
+    try {
+      await future;
+    } catch (_) {
+      // The FutureBuilder presents the existing retry state on errors.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => RefreshIndicator(
+    onRefresh: _refresh,
+    child: FutureBuilder<LndDataSnapshot>(
+      future: _data,
+      builder: (context, snapshot) {
+        final standings = snapshot.data?.standings ?? const <LeagueStanding>[];
+        return CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                standings.isEmpty)
+              const SliverFillRemaining(
+                child: Center(child: CircularProgressIndicator(color: _accent)),
+              )
+            else if (snapshot.hasError && standings.isEmpty)
+              SliverFillRemaining(child: _LndError(onRetry: _refresh))
+            else ...[
+              SliverToBoxAdapter(
+                child: _LndUpdatedLabel(updatedAt: snapshot.data?.updatedAt),
+              ),
+              SliverToBoxAdapter(child: _StandingsHeader()),
+              SliverList.builder(
+                itemCount: standings.length,
+                itemBuilder: (context, index) =>
+                    _StandingRow(standing: standings[index]),
+              ),
+              const SliverToBoxAdapter(child: _StandingsLegend()),
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(18, 12, 18, 24),
+                  child: Text(
+                    'Fonte: LND · dati a scopo informativo; fanno fede i Comunicati Ufficiali.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: _mutedInk, fontSize: 11),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    ),
+  );
+}
+
+class LndFixturesPage extends StatefulWidget {
+  const LndFixturesPage({required this.service, super.key});
+  final LndDataService service;
+  @override
+  State<LndFixturesPage> createState() => _LndFixturesPageState();
+}
+
+class _LndFixturesPageState extends State<LndFixturesPage> {
+  late Future<LndDataSnapshot> _data;
+  int? _selectedRoundNumber;
+  String? _selectedLeg;
+  @override
+  void initState() {
+    super.initState();
+    _data = widget.service.load();
+  }
+
+  Future<void> _refresh() async {
+    final future = widget.service.load(
+      forceRefresh: true,
+      roundNumber: _selectedRoundNumber,
+      leg: _selectedLeg ?? 'first',
+    );
+    setState(() => _data = future);
+    try {
+      await future;
+    } catch (_) {
+      // The FutureBuilder presents the existing retry state on errors.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<LndDataSnapshot>(
+    future: _data,
+    builder: (context, snapshot) {
+      final allFixtures = snapshot.data?.fixtures ?? const <LeagueFixture>[];
+      final loadedMatch = allFixtures.isEmpty ? null : allFixtures.first;
+      final roundNumber = _selectedRoundNumber ?? loadedMatch?.roundNumber;
+      final leg = _selectedLeg ?? loadedMatch?.leg;
+      final fixtures = roundNumber == null || leg == null
+          ? const <LeagueFixture>[]
+          : allFixtures
+                .where((f) => f.roundNumber == roundNumber && f.leg == leg)
+                .toList();
+      return RefreshIndicator(
+        onRefresh: _refresh,
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            if (snapshot.data != null)
+              SliverToBoxAdapter(
+                child: _LndUpdatedLabel(updatedAt: snapshot.data?.updatedAt),
+              ),
+            if (roundNumber != null && leg != null)
+              SliverToBoxAdapter(
+                child: _MatchdayLabel(
+                  roundNumber: roundNumber,
+                  leg: leg,
+                  onPrevious: leg == 'first' && roundNumber == 1
+                      ? null
+                      : () => _navigate(roundNumber, leg, -1),
+                  onNext: leg == 'second' && roundNumber == 17
+                      ? null
+                      : () => _navigate(roundNumber, leg, 1),
+                ),
+              ),
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                fixtures.isEmpty)
+              const SliverFillRemaining(
+                child: Center(child: CircularProgressIndicator(color: _accent)),
+              )
+            else if (snapshot.hasError && fixtures.isEmpty)
+              SliverFillRemaining(child: _LndError(onRetry: _refresh))
+            else ...[
+              SliverList.builder(
+                itemCount: fixtures.length,
+                itemBuilder: (context, index) =>
+                    _FixtureCard(fixture: fixtures[index]),
+              ),
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(18, 8, 18, 24),
+                  child: Text(
+                    'Fonte: LND · dati a scopo informativo; fanno fede i Comunicati Ufficiali.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: _mutedInk, fontSize: 11),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      );
+    },
+  );
+
+  void _navigate(int currentNumber, String currentLeg, int delta) {
+    var number = currentNumber + delta;
+    var leg = currentLeg;
+    if (number > 17) {
+      number = 1;
+      leg = 'second';
+    }
+    if (number < 1) {
+      number = 17;
+      leg = 'first';
+    }
+    final future = widget.service.load(roundNumber: number, leg: leg);
+    setState(() {
+      _selectedRoundNumber = number;
+      _selectedLeg = leg;
+      _data = future;
+    });
+  }
+}
+
+class _LndError extends StatelessWidget {
+  const _LndError({required this.onRetry});
+  final VoidCallback onRetry;
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.cloud_off_outlined, color: _accent, size: 36),
+          const SizedBox(height: 12),
+          const Text(
+            'Non riesco a caricare i dati LND. Controlla la connessione e riprova.',
+            textAlign: TextAlign.center,
+          ),
+          TextButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Riprova'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _LndUpdatedLabel extends StatelessWidget {
+  const _LndUpdatedLabel({required this.updatedAt});
+  final DateTime? updatedAt;
+  @override
+  Widget build(BuildContext context) {
+    final value = updatedAt == null
+        ? 'Dati LND'
+        : 'Aggiornata ${_formatPublishedAt(updatedAt!.toLocal())}';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 8, 18, 12),
+      child: Text(
+        value,
+        style: const TextStyle(color: _mutedInk, fontSize: 12),
+      ),
+    );
+  }
+}
+
+class _StandingsHeader extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) => const Padding(
+    padding: EdgeInsets.fromLTRB(16, 6, 16, 7),
+    child: Row(
+      children: [
+        SizedBox(width: 34),
+        Expanded(child: Text('SQUADRA', style: _tableHead)),
+        SizedBox(width: 29, child: Text('PG', style: _tableHead)),
+        SizedBox(width: 24, child: Text('V', style: _tableHead)),
+        SizedBox(width: 24, child: Text('N', style: _tableHead)),
+        SizedBox(width: 24, child: Text('S', style: _tableHead)),
+        SizedBox(width: 34, child: Text('DR', style: _tableHead)),
+        SizedBox(width: 29, child: Text('PT', style: _tableHead)),
+      ],
+    ),
+  );
+}
+
+const _tableHead = TextStyle(
+  fontSize: 9,
+  color: _mutedInk,
+  fontWeight: FontWeight.w800,
+);
+
+class _StandingsLegend extends StatelessWidget {
+  const _StandingsLegend();
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+    child: Wrap(
+      spacing: 14,
+      runSpacing: 6,
+      children: [
+        _StandingsLegendItem(
+          color: Color.alphaBlend(
+            _promotionGreen.withValues(alpha: 0.16),
+            Theme.of(context).colorScheme.surface,
+          ),
+          borderColor: _promotionGreen.withValues(alpha: 0.45),
+          label: 'Promozione diretta · 1ª',
+        ),
+        _StandingsLegendItem(
+          color: Color.alphaBlend(
+            _playoffOrange.withValues(alpha: 0.16),
+            Theme.of(context).colorScheme.surface,
+          ),
+          borderColor: _playoffOrange.withValues(alpha: 0.45),
+          label: 'Playoff · 2ª–5ª',
+        ),
+        _StandingsLegendItem(
+          color: Color.alphaBlend(
+            _accent.withValues(alpha: 0.16),
+            Theme.of(context).colorScheme.surface,
+          ),
+          borderColor: _accent.withValues(alpha: 0.45),
+          label: 'Reggina',
+        ),
+      ],
+    ),
+  );
+}
+
+class _StandingsLegendItem extends StatelessWidget {
+  const _StandingsLegendItem({
+    required this.color,
+    required this.borderColor,
+    required this.label,
+  });
+
+  final Color color, borderColor;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        width: 10,
+        height: 10,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(3),
+          border: Border.all(color: borderColor),
+        ),
+      ),
+      const SizedBox(width: 5),
+      Text(
+        label,
+        style: const TextStyle(
+          color: _mutedInk,
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    ],
+  );
+}
+
+class _StandingRow extends StatelessWidget {
+  const _StandingRow({required this.standing});
+  final LeagueStanding standing;
+  @override
+  Widget build(BuildContext context) {
+    final isReggina = standing.team.toLowerCase().contains('reggina');
+    final isDirectPromotion = !isReggina && standing.position == 1;
+    final isPlayoff =
+        !isReggina && standing.position >= 2 && standing.position <= 5;
+    final rowColor = isReggina
+        ? Color.alphaBlend(
+            _accent.withValues(alpha: 0.14),
+            Theme.of(context).colorScheme.surface,
+          )
+        : isPlayoff
+        ? Color.alphaBlend(
+            _playoffOrange.withValues(alpha: 0.16),
+            Theme.of(context).colorScheme.surface,
+          )
+        : isDirectPromotion
+        ? Color.alphaBlend(
+            _promotionGreen.withValues(alpha: 0.16),
+            Theme.of(context).colorScheme.surface,
+          )
+        : Theme.of(context).colorScheme.surface;
+    final statusColor = isReggina
+        ? _accent
+        : isPlayoff
+        ? _playoffOrange
+        : isDirectPromotion
+        ? _promotionGreen
+        : Theme.of(context).colorScheme.outlineVariant;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 2, 12, 2),
+      decoration: BoxDecoration(
+        color: rowColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: statusColor.withValues(alpha: 0.55)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 10),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 29,
+            child: Text(
+              '${standing.position}',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          _TeamLogo(url: standing.logoUrl, size: 24),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              standing.team,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: isReggina
+                    ? _accent
+                    : Theme.of(context).colorScheme.onSurface,
+                fontSize: 12,
+                fontWeight: isReggina ? FontWeight.w900 : FontWeight.w600,
+              ),
+            ),
+          ),
+          _cell('${standing.played}', 29),
+          _cell('${standing.wins}', 24),
+          _cell('${standing.draws}', 24),
+          _cell('${standing.losses}', 24),
+          _cell(
+            '${standing.goalDifference > 0 ? '+' : ''}${standing.goalDifference}',
+            34,
+          ),
+          _cell('${standing.points}', 29, bold: true),
+        ],
+      ),
+    );
+  }
+
+  Widget _cell(String text, double width, {bool bold = false}) => SizedBox(
+    width: width,
+    child: Text(
+      text,
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        fontSize: 11,
+        color: _ink,
+        fontWeight: bold ? FontWeight.w900 : FontWeight.w500,
+      ),
+    ),
+  );
+}
+
+class _MatchdayLabel extends StatelessWidget {
+  const _MatchdayLabel({
+    required this.roundNumber,
+    required this.leg,
+    required this.onPrevious,
+    required this.onNext,
+  });
+  final int roundNumber;
+  final String leg;
+  final VoidCallback? onPrevious, onNext;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(18, 8, 18, 12),
+    child: Row(
+      children: [
+        IconButton(
+          onPressed: onPrevious,
+          icon: const Icon(Icons.chevron_left_rounded),
+          visualDensity: VisualDensity.compact,
+        ),
+        Expanded(
+          child: Text(
+            '${leg == 'first' ? 'Andata' : 'Ritorno'} · $roundNumberª giornata',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w900),
+          ),
+        ),
+        IconButton(
+          onPressed: onNext,
+          icon: const Icon(Icons.chevron_right_rounded),
+          visualDensity: VisualDensity.compact,
+        ),
+      ],
+    ),
+  );
+}
+
+class _FixtureCard extends StatelessWidget {
+  const _FixtureCard({required this.fixture});
+  final LeagueFixture fixture;
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.surface,
+      borderRadius: BorderRadius.circular(19),
+      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.calendar_today_outlined, size: 14, color: _accent),
+            const SizedBox(width: 7),
+            Expanded(
+              child: Text(
+                '${_formatFixtureDate(fixture.date)}${fixture.time.isEmpty ? '' : ' · ${fixture.time}'}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 13),
+        Row(
+          children: [
+            Expanded(
+              child: _FixtureTeam(
+                name: fixture.homeTeam,
+                logo: fixture.homeLogoUrl,
+              ),
+            ),
+            SizedBox(
+              width: 58,
+              child: Center(
+                child: fixture.homeScore != null && fixture.awayScore != null
+                    ? Text(
+                        '${fixture.homeScore}-${fixture.awayScore}',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          color: _accent,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.5,
+                        ),
+                      )
+                    : Text(
+                        'VS',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 10,
+                        ),
+                      ),
+              ),
+            ),
+            Expanded(
+              child: _FixtureTeam(
+                name: fixture.awayTeam,
+                logo: fixture.awayLogoUrl,
+              ),
+            ),
+          ],
+        ),
+        if (fixture.venue.isNotEmpty || fixture.address.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          const SizedBox(height: 9),
+          Row(
+            children: [
+              Icon(
+                Icons.stadium_outlined,
+                size: 15,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  [
+                    fixture.venue,
+                    fixture.address,
+                  ].where((e) => e.isNotEmpty).join(' · '),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 10,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    ),
+  );
+}
+
+class _FixtureTeam extends StatelessWidget {
+  const _FixtureTeam({required this.name, required this.logo});
+  final String name;
+  final String? logo;
+  @override
+  Widget build(BuildContext context) => Column(
+    mainAxisAlignment: MainAxisAlignment.center,
+    crossAxisAlignment: CrossAxisAlignment.center,
+    children: [
+      _TeamLogo(url: logo, size: 36),
+      const SizedBox(height: 5),
+      Text(
+        name,
+        textAlign: TextAlign.center,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+      ),
+    ],
+  );
+}
+
+class _TeamLogo extends StatelessWidget {
+  const _TeamLogo({required this.url, required this.size});
+  final String? url;
+  final double size;
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: size,
+    height: size,
+    child: url == null
+        ? Icon(
+            Icons.shield_outlined,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          )
+        : Image.network(
+            url!,
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) => Icon(
+              Icons.shield_outlined,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+  );
+}
