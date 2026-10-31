@@ -14,6 +14,9 @@ abstract final class AppPalette {
   static const gold = Color(0xFFE4CF7E);
   static const goldDark = Color(0xFFB26D26);
   static const line = Color(0xFFE8DEDF);
+  // Match white-backed club images and keep transparent crests readable.
+  static const teamLogoBackground = Colors.white;
+  static const teamLogoForeground = amaranto;
   static const navMuted = Color(0xFFDDBFC7);
   static const bannerMuted = Color(0xFFE8D3D8);
   static const labelOnBrand = Color(0xFFF2C8D0);

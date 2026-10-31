@@ -9,6 +9,7 @@ import 'services/news_feed_service.dart';
 import 'services/news_fallback_images.dart';
 import 'services/news_notifications.dart';
 import 'widgets/news_notification_settings.dart';
+import 'widgets/release_update_button.dart';
 import 'theme/app_theme.dart';
 
 final _navigatorKey = GlobalKey<NavigatorState>();
@@ -401,7 +402,7 @@ class _FeedPageState extends State<FeedPage> {
                               ),
                             ),
                             const SizedBox(width: 10),
-                            Flexible(
+                            Expanded(
                               child: Text(
                                 'Amaranto Feed',
                                 style: Theme.of(context).textTheme.headlineSmall
@@ -411,6 +412,7 @@ class _FeedPageState extends State<FeedPage> {
                                     ),
                               ),
                             ),
+                            const ReleaseUpdateButton(),
                           ],
                         ),
                       ),
@@ -2194,7 +2196,7 @@ class _StandingRow extends StatelessWidget {
               ),
             ),
           ),
-          _TeamLogo(url: standing.logoUrl, size: 24),
+          _TeamLogo(url: standing.logoUrl, team: standing.team, size: 24),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -2382,7 +2384,7 @@ class _FixtureTeam extends StatelessWidget {
     mainAxisAlignment: MainAxisAlignment.center,
     crossAxisAlignment: CrossAxisAlignment.center,
     children: [
-      _TeamLogo(url: logo, size: 36),
+      _TeamLogo(url: logo, team: name, size: 36),
       const SizedBox(height: 5),
       Text(
         name,
@@ -2396,24 +2398,44 @@ class _FixtureTeam extends StatelessWidget {
 }
 
 class _TeamLogo extends StatelessWidget {
-  const _TeamLogo({required this.url, required this.size});
+  const _TeamLogo({required this.url, required this.team, required this.size});
   final String? url;
+  final String team;
   final double size;
+
+  String? get _assetPath {
+    final name = team.toLowerCase();
+    if (name.contains('vigor lamezia')) {
+      return 'assets/team_logos/vigor_lamezia.png';
+    }
+    if (name.startsWith('trapani')) {
+      return 'assets/team_logos/trapani.png';
+    }
+    return null;
+  }
+
   @override
-  Widget build(BuildContext context) => SizedBox(
-    width: size,
-    height: size,
-    child: url == null
-        ? Icon(
-            Icons.shield_outlined,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          )
+  Widget build(BuildContext context) => Container(
+    width: size + 8,
+    height: size + 8,
+    padding: const EdgeInsets.all(4),
+    clipBehavior: Clip.antiAlias,
+    decoration: BoxDecoration(
+      color: AppPalette.teamLogoBackground,
+      borderRadius: BorderRadius.circular(size / 4),
+    ),
+    // Replace faded/off-center source images with unchanged official crests,
+    // including when displaying an older cached round.
+    child: _assetPath != null
+        ? Image.asset(_assetPath!, fit: BoxFit.contain)
+        : url == null
+        ? Icon(Icons.shield_outlined, color: AppPalette.teamLogoForeground)
         : Image.network(
             url!,
             fit: BoxFit.contain,
             errorBuilder: (context, error, stackTrace) => Icon(
               Icons.shield_outlined,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              color: AppPalette.teamLogoForeground,
             ),
           ),
   );

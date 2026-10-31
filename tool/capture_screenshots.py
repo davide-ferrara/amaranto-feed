@@ -4,6 +4,7 @@
 Usage: ANDROID_SERIAL=emulator-5554 python tool/capture_screenshots.py
 Requires ADB and an already installed, running Amaranto Feed app.
 """
+import argparse
 import os
 from pathlib import Path
 import re
@@ -15,6 +16,13 @@ ROOT = Path(__file__).resolve().parents[1]
 ADB = os.environ.get('ADB', '/home/dff/Android/Sdk/platform-tools/adb')
 COMMAND = [ADB, '-s', os.environ.get('ANDROID_SERIAL', 'emulator-5554')]
 OUTPUT = ROOT / 'docs/screenshots'
+TABS = {
+    'Chat': 'chat', 'Calendario': 'calendar', 'Feed': 'feed',
+    'Classifica': 'standings', 'Profilo': 'profile',
+}
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--tabs', nargs='+', choices=list(TABS), default=list(TABS))
+options = parser.parse_args()
 
 
 def adb(*args):
@@ -40,10 +48,8 @@ def tap_tab(label):
 size = adb('shell', 'wm', 'size').decode()
 width, height = map(int, re.findall(r'(\d+)x(\d+)', size)[-1])
 OUTPUT.mkdir(parents=True, exist_ok=True)
-for label, filename in [
-    ('Chat', 'chat'), ('Calendario', 'calendar'), ('Feed', 'feed'),
-    ('Classifica', 'standings'), ('Profilo', 'profile'),
-]:
+for label in options.tabs:
+    filename = TABS[label]
     tap_tab(label)
     if label != 'Chat':
         # Return each scrollable tab to its beginning, even after manual review.

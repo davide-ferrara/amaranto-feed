@@ -2,6 +2,17 @@
 
 Standalone Flutter app for Reggina news, fixtures, and standings. No application server, hosted database, or API keys are required.
 
+[Download the latest Android APK](https://github.com/davide-ferrara/amaranto-feed/releases/latest).
+Open the downloaded APK to install it; Android may ask you to allow installation
+from your browser. Future updates keep your app settings and cached data.
+
+The feed header shows a gold download button on the right when a newer published
+GitHub release is available. Tapping it downloads the universal Android APK through
+your browser; you confirm installation yourself. Checks run on launch and resume,
+at most once every six hours after a successful check, with a five-minute retry
+window after network failures. Drafts, prereleases, and equal/older versions are
+ignored. This APK update button is Android-only. See [release instructions](docs/releases.md).
+
 ## Stable alpha scope
 
 - The feed aggregates RSS headlines and opens the original article in an in-app browser.
