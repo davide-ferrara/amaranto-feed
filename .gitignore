@@ -49,3 +49,17 @@ app.*.map.json
 
 # FVM Version Cache
 .fvm/
+
+# Private signing material and local signing configuration
+key.properties
+*.jks
+*.keystore
+*.p12
+*.pfx
+
+# Firebase / Google service-account credentials (not public client config)
+*service-account*.json
+*service_account*.json
+*firebase-adminsdk*.json
+firebase-admin*.json
+application_default_credentials.json
