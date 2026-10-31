@@ -1803,13 +1803,17 @@ class ProfilePage extends StatelessWidget {
               );
             }
             return _ProfileAccountCard(
-              title: user.displayName?.trim().isNotEmpty == true
+              title: user.isAnonymous
+                  ? 'Utente ospite'
+                  : user.displayName?.trim().isNotEmpty == true
                   ? user.displayName!.trim()
                   : 'Google account',
-              subtitle: user.email ?? '',
+              subtitle: user.isAnonymous
+                  ? 'Modalità di debug, sola lettura'
+                  : user.email ?? '',
               photoUrl: user.photoURL,
               icon: Icons.person_rounded,
-              signedIn: true,
+              signedIn: !user.isAnonymous,
             );
           },
         )

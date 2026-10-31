@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -25,6 +26,8 @@ class _AuthEntryGateState extends State<AuthEntryGate> {
   static const _entryCompletedKey = 'auth_entry_completed';
 
   bool? _entryCompleted;
+  bool _debugSessionResolved = false;
+  String? _debugSessionError;
   StreamSubscription<User?>? _authSubscription;
 
   @override
@@ -50,6 +53,11 @@ class _AuthEntryGateState extends State<AuthEntryGate> {
         if (user != null) _completeEntry();
       });
     }
+    if (kDebugMode && widget.firebaseReady) {
+      unawaited(_startDebugSession());
+    } else {
+      _debugSessionResolved = true;
+    }
   }
 
   @override
@@ -66,9 +74,45 @@ class _AuthEntryGateState extends State<AuthEntryGate> {
     }
   }
 
+  Future<void> _startDebugSession() async {
+    try {
+      if (FirebaseAuth.instance.currentUser == null) {
+        await FirebaseAuth.instance.signInAnonymously();
+      }
+    } on FirebaseAuthException catch (error) {
+      if (mounted) {
+        setState(() {
+          _debugSessionError = error.code == 'operation-not-allowed'
+              ? 'Per la modalità ospite di debug, abilita Accesso anonimo in Firebase Authentication.'
+              : 'Accesso ospite di debug non riuscito.';
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _debugSessionError = 'Accesso ospite di debug non riuscito.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _debugSessionResolved = true);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_entryCompleted == null) {
+    if (kDebugMode &&
+        widget.firebaseReady &&
+        _debugSessionError != null &&
+        FirebaseAuth.instance.currentUser == null) {
+      return AuthEntryScreen(
+        firebaseReady: true,
+        onContinue: _completeEntry,
+        debugSessionError: _debugSessionError,
+        onRetryDebugSession: _startDebugSession,
+      );
+    }
+
+    if (_entryCompleted == null || !_debugSessionResolved) {
       return const _AuthEntryBackground(
         child: Center(child: CircularProgressIndicator()),
       );
@@ -77,7 +121,12 @@ class _AuthEntryGateState extends State<AuthEntryGate> {
     if (!widget.firebaseReady) {
       return _entryCompleted!
           ? widget.appBuilder(context)
-          : AuthEntryScreen(firebaseReady: false, onContinue: _completeEntry);
+          : AuthEntryScreen(
+              firebaseReady: false,
+              onContinue: _completeEntry,
+              debugSessionError: _debugSessionError,
+              onRetryDebugSession: _startDebugSession,
+            );
     }
 
     return StreamBuilder<User?>(
@@ -86,7 +135,12 @@ class _AuthEntryGateState extends State<AuthEntryGate> {
         if (snapshot.data != null || _entryCompleted!) {
           return widget.appBuilder(context);
         }
-        return AuthEntryScreen(firebaseReady: true, onContinue: _completeEntry);
+        return AuthEntryScreen(
+          firebaseReady: true,
+          onContinue: _completeEntry,
+          debugSessionError: _debugSessionError,
+          onRetryDebugSession: _startDebugSession,
+        );
       },
     );
   }
@@ -96,11 +150,15 @@ class AuthEntryScreen extends StatefulWidget {
   const AuthEntryScreen({
     required this.firebaseReady,
     required this.onContinue,
+    required this.debugSessionError,
+    required this.onRetryDebugSession,
     super.key,
   });
 
   final bool firebaseReady;
   final Future<void> Function() onContinue;
+  final String? debugSessionError;
+  final Future<void> Function() onRetryDebugSession;
 
   @override
   State<AuthEntryScreen> createState() => _AuthEntryScreenState();
@@ -240,6 +298,38 @@ class _AuthEntryScreenState extends State<AuthEntryScreen> {
                                     ? AppPalette.subtleOnBrand
                                     : colors.onSurfaceVariant,
                               ),
+                        ),
+                      ],
+                      if (widget.debugSessionError != null) ...[
+                        const SizedBox(height: 8),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 340),
+                          child: Text(
+                            widget.debugSessionError!,
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: dark
+                                      ? AppPalette.subtleOnBrand
+                                      : colors.error,
+                                  decoration: TextDecoration.none,
+                                  height: 1.35,
+                                ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        OutlinedButton.icon(
+                          onPressed: _busy
+                              ? null
+                              : () async {
+                                  setState(() => _busy = true);
+                                  await widget.onRetryDebugSession();
+                                  if (mounted) {
+                                    setState(() => _busy = false);
+                                  }
+                                },
+                          icon: const Icon(Icons.person_outline_rounded),
+                          label: const Text('Riprova modalità ospite'),
                         ),
                       ],
                     ],

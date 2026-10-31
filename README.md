@@ -1,6 +1,6 @@
 # Amaranto Feed
 
-Standalone Flutter app for Reggina news, fixtures, and standings. No application server, hosted database, or API keys are required.
+Standalone Flutter app for Reggina news, fixtures, standings, and supporter chat. It has no custom application server; Firebase Authentication and Cloud Firestore provide Google sign-in and shared chat storage.
 
 [Download the latest Android APK](https://github.com/davide-ferrara/amaranto-feed/releases/latest).
 Open the downloaded APK to install it; Android may ask you to allow installation
@@ -19,11 +19,24 @@ ignored. This APK update button is Android-only. See [release instructions](docs
 - The next-match card opens a match detail page. Standings and matchdays load directly from the public LND competition page; completed match scores are shown in the calendar.
 - Main tabs support horizontal swiping. The feed is the initial and centered tab.
 - The app follows the system light/dark appearance by default; the profile page can override it.
-- Chat and sign-in remain placeholders in this alpha.
+- The Chat tab is a shared, live room for users signed in with Google. It shows the latest 100 messages.
 
 LND parsing runs on the device. Standings and visited matchdays are cached locally for six hours; if LND is unavailable, the app shows the last successfully saved data for that season and matchday, with its original update time. Pull to refresh bypasses the cache. An internet connection is needed on first use and to fetch new data.
 
-Chat and sign-in are still placeholders. Local storage does not synchronize between users or devices. A future shared chat will need a separate design for message delivery and persistence.
+## Firebase chat setup
+
+The Android app is configured for the Firebase project `amaranto-feed`. To enable shared chat:
+
+1. In Firebase Console, create a Cloud Firestore database in Native mode. Choose its location carefully because the database location cannot be changed later.
+2. From the project root, install and sign in to the Firebase CLI, then publish the included security rules:
+
+   ```sh
+   npm install -g firebase-tools
+   firebase login
+   firebase deploy --only firestore:rules
+   ```
+
+The rules allow signed-in users to read the room and create messages as themselves. Messages are limited to 1,000 characters, cannot be edited, and can only be deleted by their author. Anonymous debug sessions can read the chat but cannot post or delete messages. To use the automatic debug viewer, also enable the Anonymous provider under Firebase Authentication → Sign-in method. Deleting a permanent account removes that user's messages before deleting their Firebase Authentication account. Chat messages stay in Firestore so they synchronize between devices; the client listens for new messages in real time and keeps the newest 100 in the view.
 
 The current target is the native mobile app. A browser build would need a separate solution for third-party CORS restrictions on LND and RSS requests.
 

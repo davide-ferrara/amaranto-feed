@@ -107,6 +107,13 @@ class _AccountPageState extends State<AccountPage> {
                     message: 'Accedi con Google dalla scheda Chat.',
                   );
                 }
+                if (user.isAnonymous) {
+                  return const _AccountMessage(
+                    icon: Icons.visibility_outlined,
+                    message:
+                        'Sessione ospite di debug. La chat è in sola lettura.',
+                  );
+                }
                 return ListView(
                   padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
                   children: [
