@@ -28,7 +28,8 @@ The iOS background task and notification configuration is included, but has not 
 
 ## Screenshots
 
-Captured from the Android emulator.
+Current dark theme, captured from the Android emulator. Refresh all five views
+with `python tool/capture_screenshots.py` while the app is running.
 
 | Chat | Calendario | Feed |
 | --- | --- | --- |
