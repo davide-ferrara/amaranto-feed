@@ -37,6 +37,7 @@ class GoogleAuthService {
         rethrow;
       }
     }
+    await ChatService.instance.deleteProfile(user.uid);
     await user.delete();
 
     await _initializeGoogleSignIn();

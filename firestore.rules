@@ -6,19 +6,44 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function validChatName(name) {
+      let normalized = name.lower();
+      return name is string
+        && name.size() > 0
+        && name.size() <= 60
+        && !normalized.matches('.*(^|[^a-z0-9])(admin|administrator|moderator|mod|staff|official|support|system|owner)([^a-z0-9]|$).*')
+        && !(['admin', 'administrator', 'moderator', 'mod', 'staff',
+          'official', 'support', 'system', 'owner', 'reggina admin',
+          'amaranto feed admin'].hasAny([normalized]));
+    }
+
     function validChatMessage() {
       let message = request.resource.data;
+      let profilePath = /databases/$(database)/documents/chat_profiles/$(request.auth.uid);
+      let expectedName = exists(profilePath)
+        ? get(profilePath).data.displayName
+        : request.auth.token.get('name', 'Tifoso');
       return message.keys().hasAll(['userId', 'userName', 'text', 'createdAt'])
         && message.keys().hasOnly(['userId', 'userName', 'text', 'createdAt'])
         && message.userId == request.auth.uid
-        && message.userName is string
-        && message.userName.size() > 0
-        && message.userName.size() <= 60
-        && message.userName == request.auth.token.get('name', 'Tifoso')
+        && validChatName(message.userName)
+        && message.userName == expectedName
         && message.text is string
         && message.text.size() > 0
         && message.text.size() <= 1000
         && message.createdAt == request.time;
+    }
+
+    match /chat_profiles/{userId} {
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow create, update: if signedIn()
+        && request.auth.uid == userId
+        && request.auth.token.firebase.sign_in_provider != 'anonymous'
+        && request.resource.data.keys().hasOnly(['displayName'])
+        && validChatName(request.resource.data.displayName);
+      allow delete: if signedIn()
+        && request.auth.uid == userId
+        && request.auth.token.firebase.sign_in_provider != 'anonymous';
     }
 
     match /chat_messages/{messageId} {

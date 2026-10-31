@@ -36,7 +36,7 @@ The Android app is configured for the Firebase project `amaranto-feed`. To enabl
    firebase deploy --only firestore:rules
    ```
 
-The rules allow signed-in users to read the room and create messages as themselves. Messages are limited to 1,000 characters, cannot be edited, and can only be deleted by their author. Anonymous debug sessions can read the chat but cannot post or delete messages. To use the automatic debug viewer, also enable the Anonymous provider under Firebase Authentication → Sign-in method. Deleting a permanent account removes that user's messages before deleting their Firebase Authentication account. Chat messages stay in Firestore so they synchronize between devices; the client listens for new messages in real time and keeps the newest 100 in the view.
+The rules allow signed-in users to read the room and create messages as themselves. Messages are limited to 1,000 characters, cannot be edited, and can only be deleted by their author. Signed-in users can choose a public chat name under Settings; otherwise their Google account name is used. Anonymous debug sessions can read the chat but cannot post or delete messages. To use the automatic debug viewer, also enable the Anonymous provider under Firebase Authentication → Sign-in method. Deleting a permanent account removes that user's messages and chat profile before deleting their Firebase Authentication account. Chat messages stay in Firestore so they synchronize between devices; the client listens for new messages in real time and keeps the newest 100 in the view.
 
 The current target is the native mobile app. A browser build would need a separate solution for third-party CORS restrictions on LND and RSS requests.
 

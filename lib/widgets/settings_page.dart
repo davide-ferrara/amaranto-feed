@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import 'chat_username_settings.dart';
 import 'news_notification_settings.dart';
 
 class SettingsPage extends StatelessWidget {
@@ -74,6 +75,8 @@ class SettingsPage extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(height: 16),
+          const ChatUsernameSettings(),
           const SizedBox(height: 16),
           const NewsNotificationSettings(),
         ],
