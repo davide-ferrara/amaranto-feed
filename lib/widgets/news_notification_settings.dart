@@ -13,7 +13,7 @@ class NewsNotificationSettings extends StatelessWidget {
     return ListenableBuilder(
       listenable: notifications,
       builder: (context, _) => Container(
-        decoration: AppTheme.panel(context, 20),
+        decoration: AppTheme.subtlePanel(context, 20),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: Column(

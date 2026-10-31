@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -8,25 +10,38 @@ import 'services/lnd_data_service.dart';
 import 'services/news_feed_service.dart';
 import 'services/news_fallback_images.dart';
 import 'services/news_notifications.dart';
-import 'widgets/news_notification_settings.dart';
 import 'widgets/release_update_button.dart';
+import 'widgets/chat_page.dart';
+import 'widgets/settings_page.dart';
+import 'widgets/account_page.dart';
+import 'widgets/auth_entry_gate.dart';
 import 'theme/app_theme.dart';
 
 final _navigatorKey = GlobalKey<NavigatorState>();
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const RgnNewsApp());
+  var firebaseReady = false;
+  try {
+    await Firebase.initializeApp();
+    firebaseReady = true;
+  } on Exception catch (error) {
+    debugPrint('Firebase initialization failed: $error');
+  }
+  runApp(AmarantoFeedApp(firebaseReady: firebaseReady));
 }
 
-class RgnNewsApp extends StatefulWidget {
-  const RgnNewsApp({super.key});
+class AmarantoFeedApp extends StatefulWidget {
+  const AmarantoFeedApp({this.firebaseReady = false, super.key});
+
+  final bool firebaseReady;
 
   @override
-  State<RgnNewsApp> createState() => _RgnNewsAppState();
+  State<AmarantoFeedApp> createState() => _AmarantoFeedAppState();
 }
 
-class _RgnNewsAppState extends State<RgnNewsApp> with WidgetsBindingObserver {
+class _AmarantoFeedAppState extends State<AmarantoFeedApp>
+    with WidgetsBindingObserver {
   ThemeMode _themeMode = ThemeMode.system;
 
   @override
@@ -85,7 +100,14 @@ class _RgnNewsAppState extends State<RgnNewsApp> with WidgetsBindingObserver {
       themeMode: _themeMode,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
-      home: AppShell(themeMode: _themeMode, onThemeModeChanged: _setThemeMode),
+      home: AuthEntryGate(
+        firebaseReady: widget.firebaseReady,
+        appBuilder: (_) => AppShell(
+          themeMode: _themeMode,
+          onThemeModeChanged: _setThemeMode,
+          firebaseReady: widget.firebaseReady,
+        ),
+      ),
     );
   }
 }
@@ -94,10 +116,12 @@ class AppShell extends StatefulWidget {
   const AppShell({
     required this.themeMode,
     required this.onThemeModeChanged,
+    required this.firebaseReady,
     super.key,
   });
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeModeChanged;
+  final bool firebaseReady;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -132,17 +156,18 @@ class _AppShellState extends State<AppShell> {
             controller: _pageController,
             onPageChanged: (index) => setState(() => _selectedIndex = index),
             children: [
-              const PlaceholderPage(
-                icon: Icons.forum_outlined,
-                title: 'Chat',
-                description: 'Lo spazio della community verrà aggiunto in una fase successiva.',
+              _KeepAlivePage(
+                child: ChatPage(firebaseReady: widget.firebaseReady),
               ),
-              LndFixturesPage(service: _lndService),
+              _KeepAlivePage(child: LndFixturesPage(service: _lndService)),
               FeedPage(key: _feedKey, lndService: _lndService),
-              LndStandingsPage(service: _lndService),
-              ProfilePage(
-                themeMode: widget.themeMode,
-                onThemeModeChanged: widget.onThemeModeChanged,
+              _KeepAlivePage(child: LndStandingsPage(service: _lndService)),
+              _KeepAlivePage(
+                child: ProfilePage(
+                  themeMode: widget.themeMode,
+                  onThemeModeChanged: widget.onThemeModeChanged,
+                  firebaseReady: widget.firebaseReady,
+                ),
               ),
             ],
           ),
@@ -156,14 +181,40 @@ class _AppShellState extends State<AppShell> {
   }
 
   Future<void> _onNavigationSelected(int index) async {
-    await _pageController.animateToPage(
-      index,
-      duration: const Duration(milliseconds: 240),
-      curve: Curves.easeOutCubic,
-    );
-    if (index == _feedIndex) {
+    final reselected = index == _selectedIndex;
+    if ((index - _selectedIndex).abs() > 1) {
+      _pageController.jumpToPage(index);
+    } else {
+      await _pageController.animateToPage(
+        index,
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOutCubic,
+      );
+    }
+    if (index == _feedIndex && reselected) {
       await _feedKey.currentState?.scrollToTopAndRefresh();
     }
+  }
+}
+
+/// Keep visited tabs alive without eagerly building every tab at startup.
+class _KeepAlivePage extends StatefulWidget {
+  const _KeepAlivePage({required this.child});
+  final Widget child;
+
+  @override
+  State<_KeepAlivePage> createState() => _KeepAlivePageState();
+}
+
+class _KeepAlivePageState extends State<_KeepAlivePage>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }
 
@@ -176,7 +227,7 @@ class _BottomNavBar extends StatelessWidget {
   static const _items = [
     (Icons.forum_outlined, Icons.forum_rounded, 'Chat'),
     (Icons.calendar_month_outlined, Icons.calendar_month_rounded, 'Calendario'),
-    (Icons.dynamic_feed_outlined, Icons.dynamic_feed_rounded, 'Feed'),
+    (Icons.dynamic_feed_outlined, Icons.dynamic_feed_rounded, 'Notizie'),
     (Icons.leaderboard_outlined, Icons.leaderboard_rounded, 'Classifica'),
     (Icons.person_outline_rounded, Icons.person_rounded, 'Profilo'),
   ];
@@ -276,28 +327,32 @@ class _BottomNavItem extends StatelessWidget {
 }
 
 class FeedPage extends StatefulWidget {
-  const FeedPage({required this.lndService, super.key});
+  const FeedPage({required this.lndService, this.feedService, super.key});
 
   final LndDataService lndService;
+  final NewsFeedService? feedService;
 
   @override
   State<FeedPage> createState() => _FeedPageState();
 }
 
-class _FeedPageState extends State<FeedPage> {
+class _FeedPageState extends State<FeedPage>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
   final ScrollController _scrollController = ScrollController();
   late final NewsFeedService _feedService;
   final NewsFallbackImages _fallbackImages = NewsFallbackImages();
   late Future<List<NewsArticle>> _articles;
   late Future<LndDataSnapshot> _sportsData;
   Future<void>? _refreshTask;
-  bool _showMatchBanner = true;
+  final ValueNotifier<bool> _showMatchBanner = ValueNotifier(true);
   double _lastScrollOffset = 0;
 
   @override
   void initState() {
     super.initState();
-    _feedService = NewsFeedService();
+    _feedService = widget.feedService ?? NewsFeedService();
     _articles = _feedService.fetchLatest();
     _sportsData = widget.lndService.load();
   }
@@ -305,7 +360,8 @@ class _FeedPageState extends State<FeedPage> {
   @override
   void dispose() {
     _scrollController.dispose();
-    _feedService.close();
+    _showMatchBanner.dispose();
+    if (widget.feedService == null) _feedService.close();
     super.dispose();
   }
 
@@ -321,7 +377,7 @@ class _FeedPageState extends State<FeedPage> {
   }
 
   void _refresh() {
-    setState(() => _articles = _feedService.fetchLatest());
+    setState(() => _articles = _feedService.fetchLatest(forceRefresh: true));
   }
 
   Future<void> _refreshFromGesture() {
@@ -331,11 +387,15 @@ class _FeedPageState extends State<FeedPage> {
   }
 
   Future<void> _performRefresh() async {
-    final refresh = _feedService.fetchLatest();
+    final refresh = _feedService.fetchLatest(forceRefresh: true);
     setState(() {
       _articles = refresh;
     });
-    await refresh;
+    try {
+      await refresh;
+    } catch (_) {
+      // The feed displays a retry message while preserving existing articles.
+    }
   }
 
   bool _onScroll(ScrollNotification notification) {
@@ -345,9 +405,9 @@ class _FeedPageState extends State<FeedPage> {
       final nextOffset = notification.metrics.pixels;
       final movingDown = nextOffset > _lastScrollOffset;
       if (nextOffset < 24 || !movingDown) {
-        if (!_showMatchBanner) setState(() => _showMatchBanner = true);
-      } else if (_showMatchBanner && nextOffset > 80) {
-        setState(() => _showMatchBanner = false);
+        if (!_showMatchBanner.value) _showMatchBanner.value = true;
+      } else if (_showMatchBanner.value && nextOffset > 80) {
+        _showMatchBanner.value = false;
       }
       _lastScrollOffset = nextOffset;
     }
@@ -356,6 +416,7 @@ class _FeedPageState extends State<FeedPage> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return FutureBuilder<LndDataSnapshot>(
       future: _sportsData,
@@ -375,60 +436,62 @@ class _FeedPageState extends State<FeedPage> {
                   color: Theme.of(context).colorScheme.primary,
                   backgroundColor: Theme.of(context).colorScheme.surface,
                   onRefresh: _refreshFromGesture,
-                  child: ListView(
+                  child: CustomScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
                     controller: _scrollController,
-                    padding: const EdgeInsets.only(bottom: 120),
-                    children: [
-                      Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          20,
-                          20,
-                          20,
-                          isDark ? 20 : 0,
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: EdgeInsets.all(isDark ? 4 : 0),
-                              decoration: BoxDecoration(
-                                color: isDark ? AppPalette.surface : null,
-                                borderRadius: BorderRadius.circular(8),
+                    slivers: [
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            20,
+                            20,
+                            20,
+                            isDark ? 20 : 0,
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: EdgeInsets.all(isDark ? 4 : 0),
+                                decoration: BoxDecoration(
+                                  color: isDark ? AppPalette.surface : null,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Image.asset(
+                                  'assets/branding/amaranto_feed_mark.png',
+                                  width: 38,
+                                  height: 38,
+                                  excludeFromSemantics: true,
+                                ),
                               ),
-                              child: Image.asset(
-                                'assets/branding/amaranto_feed_mark.png',
-                                width: 38,
-                                height: 38,
-                                excludeFromSemantics: true,
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'Amaranto Feed',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineSmall
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w900,
+                                        color: isDark ? Colors.white : null,
+                                      ),
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                'Amaranto Feed',
-                                style: Theme.of(context).textTheme.headlineSmall
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w900,
-                                      color: isDark ? Colors.white : null,
-                                    ),
-                              ),
-                            ),
-                            const ReleaseUpdateButton(),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: _NewsFeed(
-                          future: _articles,
-                          onRetry: _refresh,
-                          fallbackImages: _fallbackImages,
+                              const ReleaseUpdateButton(),
+                            ],
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 20),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 20),
-                        child: _NewsAttribution(),
+                      const SliverToBoxAdapter(child: SizedBox(height: 16)),
+                      _NewsFeed(
+                        future: _articles,
+                        onRetry: _refresh,
+                        fallbackImages: _fallbackImages,
+                      ),
+                      const SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(20, 20, 20, 120),
+                          child: _NewsAttribution(),
+                        ),
                       ),
                     ],
                   ),
@@ -438,31 +501,34 @@ class _FeedPageState extends State<FeedPage> {
                 left: 16,
                 right: 16,
                 bottom: 12,
-                child: AnimatedSlide(
-                  duration: const Duration(milliseconds: 260),
-                  curve: Curves.easeInOutCubic,
-                  offset: _showMatchBanner ? Offset.zero : const Offset(0, 1.5),
-                  child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 180),
-                    opacity: _showMatchBanner ? 1 : 0,
-                    child: IgnorePointer(
-                      ignoring: !_showMatchBanner,
-                      child: MatchMiniBanner(
-                        fixture: fixture,
-                        isLoading:
-                            sportsSnapshot.connectionState ==
-                            ConnectionState.waiting,
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => MatchDetailsPage(
-                              fixture: fixture,
-                              isLoading:
-                                  sportsSnapshot.connectionState ==
-                                  ConnectionState.waiting,
-                            ),
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: _showMatchBanner,
+                  child: RepaintBoundary(
+                    child: MatchMiniBanner(
+                      fixture: fixture,
+                      isLoading:
+                          sportsSnapshot.connectionState ==
+                          ConnectionState.waiting,
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => MatchDetailsPage(
+                            fixture: fixture,
+                            isLoading:
+                                sportsSnapshot.connectionState ==
+                                ConnectionState.waiting,
                           ),
                         ),
                       ),
+                    ),
+                  ),
+                  builder: (context, visible, child) => AnimatedSlide(
+                    duration: const Duration(milliseconds: 260),
+                    curve: Curves.easeInOutCubic,
+                    offset: visible ? Offset.zero : const Offset(0, 1.5),
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 180),
+                      opacity: visible ? 1 : 0,
+                      child: IgnorePointer(ignoring: !visible, child: child),
                     ),
                   ),
                 ),
@@ -492,41 +558,57 @@ class _NewsFeed extends StatelessWidget {
     return FutureBuilder<List<NewsArticle>>(
       future: future,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 36),
-            child: Center(child: CircularProgressIndicator()),
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 36),
+              child: Center(child: CircularProgressIndicator()),
+            ),
           );
         }
-        if (snapshot.hasError) {
-          return _FeedMessage(
-            icon: Icons.wifi_off_rounded,
-            text: snapshot.error.toString().replaceFirst('Exception: ', ''),
-            action: 'Riprova',
-            onPressed: onRetry,
+        if (snapshot.hasError && !snapshot.hasData) {
+          return SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: _FeedMessage(
+                icon: Icons.wifi_off_rounded,
+                text: snapshot.error.toString().replaceFirst('Exception: ', ''),
+                action: 'Riprova',
+                onPressed: onRetry,
+              ),
+            ),
           );
         }
 
         final articles = snapshot.data ?? const <NewsArticle>[];
         if (articles.isEmpty) {
-          return _FeedMessage(
-            icon: Icons.article_outlined,
-            text: 'Al momento non ci sono notizie disponibili.',
-            action: 'Aggiorna',
-            onPressed: onRetry,
+          return SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: _FeedMessage(
+                icon: Icons.article_outlined,
+                text: 'Al momento non ci sono notizie disponibili.',
+                action: 'Aggiorna',
+                onPressed: onRetry,
+              ),
+            ),
           );
         }
 
-        return Column(
-          children: [
-            for (var index = 0; index < articles.length; index++) ...[
-              if (index > 0) const SizedBox(height: 12),
-              NewsArticleCard(
+        return SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          sliver: SliverList.builder(
+            itemCount: articles.length,
+            itemBuilder: (context, index) => Padding(
+              padding: EdgeInsets.only(top: index == 0 ? 0 : 12),
+              child: NewsArticleCard(
+                key: ValueKey(articles[index].url),
                 article: articles[index],
                 fallbackImages: fallbackImages,
               ),
-            ],
-          ],
+            ),
+          ),
         );
       },
     );
@@ -613,6 +695,8 @@ class NewsArticleCard extends StatelessWidget {
               if (article.imageUrl != null)
                 Image.network(
                   article.imageUrl!,
+                  cacheHeight: (156 * MediaQuery.devicePixelRatioOf(context))
+                      .ceil(),
                   height: 156,
                   width: double.infinity,
                   fit: BoxFit.cover,
@@ -728,6 +812,7 @@ class _NewsImagePlaceholder extends StatelessWidget {
   Widget build(BuildContext context) {
     return Image.asset(
       imagePath,
+      cacheHeight: (156 * MediaQuery.devicePixelRatioOf(context)).ceil(),
       height: 156,
       width: double.infinity,
       fit: BoxFit.cover,
@@ -746,14 +831,73 @@ class ArticlePage extends StatefulWidget {
 }
 
 class _ArticlePageState extends State<ArticlePage> {
-  late final WebViewController _controller;
+  WebViewController? _controller;
+  Animation<double>? _routeAnimation;
+  final ValueNotifier<int> _progress = ValueNotifier(0);
+  bool _starting = false;
+  bool _failed = false;
 
   @override
-  void initState() {
-    super.initState();
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..loadRequest(Uri.parse(widget.article.url));
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final animation = ModalRoute.of(context)?.animation;
+    if (_routeAnimation != animation) {
+      _routeAnimation?.removeStatusListener(_onRouteStatus);
+      _routeAnimation = animation;
+      animation?.addStatusListener(_onRouteStatus);
+    }
+    if (animation == null || animation.status == AnimationStatus.completed) {
+      _startBrowser();
+    }
+  }
+
+  void _onRouteStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed) _startBrowser();
+  }
+
+  Future<void> _startBrowser() async {
+    if (_starting || _controller != null) return;
+    _starting = true;
+    try {
+      // Native WebView creation must not compete with the route transition.
+      final controller = WebViewController();
+      await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
+      await controller.setNavigationDelegate(
+        NavigationDelegate(
+          onProgress: (value) {
+            if (mounted) _progress.value = value;
+          },
+          onPageStarted: (_) {
+            if (mounted) {
+              _progress.value = 0;
+              if (_failed) setState(() => _failed = false);
+            }
+          },
+          onPageFinished: (_) {
+            if (mounted) _progress.value = 100;
+          },
+          onWebResourceError: (error) {
+            if (mounted && error.isForMainFrame == true) {
+              setState(() => _failed = true);
+            }
+          },
+        ),
+      );
+      if (!mounted) return;
+      setState(() => _controller = controller);
+      await controller.loadRequest(Uri.parse(widget.article.url));
+    } catch (_) {
+      if (mounted) setState(() => _failed = true);
+    } finally {
+      _starting = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _routeAnimation?.removeStatusListener(_onRouteStatus);
+    _progress.dispose();
+    super.dispose();
   }
 
   @override
@@ -767,13 +911,51 @@ class _ArticlePageState extends State<ArticlePage> {
           onPressed: _goBack,
         ),
       ),
-      body: SafeArea(child: WebViewWidget(controller: _controller)),
+      body: SafeArea(
+        child: _failed
+            ? Center(
+                child: _FeedMessage(
+                  icon: Icons.wifi_off_rounded,
+                  text: 'Non riesco a caricare la notizia. Controlla la connessione e riprova.',
+                  action: 'Riprova',
+                  onPressed: () {
+                    setState(() {
+                      _failed = false;
+                      _controller = null;
+                    });
+                    _startBrowser();
+                  },
+                ),
+              )
+            : Stack(
+                children: [
+                  if (_controller != null)
+                    WebViewWidget(controller: _controller!)
+                  else
+                    const Center(child: CircularProgressIndicator()),
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: ValueListenableBuilder<int>(
+                      valueListenable: _progress,
+                      builder: (context, progress, _) => progress >= 100
+                          ? const SizedBox.shrink()
+                          : LinearProgressIndicator(
+                              value: progress == 0 ? null : progress / 100,
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+      ),
     );
   }
 
   Future<void> _goBack() async {
-    if (await _controller.canGoBack()) {
-      await _controller.goBack();
+    final controller = _controller;
+    if (controller != null && await controller.canGoBack()) {
+      await controller.goBack();
     } else if (mounted) {
       Navigator.of(context).pop();
     }
@@ -1744,10 +1926,12 @@ class ProfilePage extends StatelessWidget {
   const ProfilePage({
     required this.themeMode,
     required this.onThemeModeChanged,
+    required this.firebaseReady,
     super.key,
   });
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeModeChanged;
+  final bool firebaseReady;
 
   @override
   Widget build(BuildContext context) => ListView(
@@ -1759,66 +1943,174 @@ class ProfilePage extends StatelessWidget {
             ?.copyWith(fontWeight: FontWeight.w900),
       ),
       const SizedBox(height: 18),
-      Container(
-        decoration: AppTheme.panel(context, 20),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: RadioGroup<ThemeMode>(
-            groupValue: themeMode,
-            onChanged: (value) {
-              if (value != null) onThemeModeChanged(value);
-            },
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.brightness_6_rounded),
-                    const SizedBox(width: 12),
-                    Text(
-                      'Tema',
-                      style: Theme.of(context).textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                  ],
+      if (firebaseReady)
+        StreamBuilder<User?>(
+          stream: FirebaseAuth.instance.authStateChanges(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Center(child: CircularProgressIndicator()),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  'Per impostazione predefinita segue il dispositivo.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                RadioListTile<ThemeMode>(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  value: ThemeMode.system,
-
-                  title: const Text('Sistema'),
-                ),
-                RadioListTile<ThemeMode>(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  value: ThemeMode.light,
-
-                  title: const Text('Chiaro'),
-                ),
-                RadioListTile<ThemeMode>(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  value: ThemeMode.dark,
-
-                  title: const Text('Scuro'),
-                ),
-              ],
+              );
+            }
+            final user = snapshot.data;
+            if (user == null) {
+              return _ProfileAccountCard(
+                title: 'Ciao tifoso',
+                subtitle: 'Accedi con Google dalla scheda Chat',
+                icon: Icons.person_outline_rounded,
+              );
+            }
+            return _ProfileAccountCard(
+              title: user.isAnonymous
+                  ? 'Utente ospite'
+                  : user.displayName?.trim().isNotEmpty == true
+                  ? user.displayName!.trim()
+                  : 'Google account',
+              subtitle: user.isAnonymous
+                  ? 'Modalità di debug, sola lettura'
+                  : user.email ?? '',
+              photoUrl: user.photoURL,
+              icon: Icons.person_rounded,
+              signedIn: !user.isAnonymous,
+            );
+          },
+        )
+      else
+        const _ProfileAccountCard(
+          title: 'Account non disponibile',
+          subtitle: 'Firebase non è connesso',
+          icon: Icons.cloud_off_outlined,
+        ),
+      const SizedBox(height: 16),
+      _ProfileNavigationTile(
+        icon: Icons.manage_accounts_outlined,
+        title: 'Account',
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => AccountPage(firebaseReady: firebaseReady),
+          ),
+        ),
+      ),
+      const SizedBox(height: 10),
+      _ProfileNavigationTile(
+        icon: Icons.settings_outlined,
+        title: 'Impostazioni',
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SettingsPage(
+              themeMode: themeMode,
+              onThemeModeChanged: onThemeModeChanged,
             ),
           ),
         ),
       ),
-      const SizedBox(height: 18),
-      const NewsNotificationSettings(),
     ],
+  );
+}
+
+class _ProfileNavigationTile extends StatelessWidget {
+  const _ProfileNavigationTile({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: AppTheme.isDark(context)
+        ? Colors.white.withValues(alpha: 0.08)
+        : Theme.of(context).colorScheme.surface,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(16),
+      side: BorderSide(
+        color: Theme.of(context).colorScheme.outlineVariant
+            .withValues(alpha: AppTheme.isDark(context) ? 0.35 : 1),
+      ),
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+      leading: Icon(icon),
+      title: Text(title),
+      trailing: const Icon(Icons.chevron_right_rounded),
+      onTap: onTap,
+    ),
+  );
+}
+
+class _ProfileAccountCard extends StatelessWidget {
+  const _ProfileAccountCard({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    this.photoUrl,
+    this.signedIn = false,
+  });
+
+  final String title;
+  final String subtitle;
+  final String? photoUrl;
+  final IconData icon;
+  final bool signedIn;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    decoration: AppTheme.subtlePanel(context, 18),
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    child: Row(
+      children: [
+        CircleAvatar(
+          radius: 25,
+          backgroundImage: photoUrl == null ? null : NetworkImage(photoUrl!),
+          child: photoUrl == null ? Icon(icon, size: 30) : null,
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              if (subtitle.isNotEmpty) ...[
+                const SizedBox(height: 3),
+                Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+              ],
+              if (signedIn) ...[
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.check_circle_rounded,
+                      size: 14,
+                      color: AppTheme.isDark(context)
+                          ? AppPalette.gold
+                          : Colors.green.shade700,
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      'Accesso effettuato con Google',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    ),
   );
 }
 
@@ -2427,11 +2719,16 @@ class _TeamLogo extends StatelessWidget {
     // Replace faded/off-center source images with unchanged official crests,
     // including when displaying an older cached round.
     child: _assetPath != null
-        ? Image.asset(_assetPath!, fit: BoxFit.contain)
+        ? Image.asset(
+            _assetPath!,
+            fit: BoxFit.contain,
+            cacheWidth: (size * MediaQuery.devicePixelRatioOf(context)).ceil(),
+          )
         : url == null
         ? Icon(Icons.shield_outlined, color: AppPalette.teamLogoForeground)
         : Image.network(
             url!,
+            cacheWidth: (size * MediaQuery.devicePixelRatioOf(context)).ceil(),
             fit: BoxFit.contain,
             errorBuilder: (context, error, stackTrace) => Icon(
               Icons.shield_outlined,

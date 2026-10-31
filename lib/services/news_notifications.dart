@@ -11,7 +11,7 @@ import '../models/news_article.dart';
 import 'news_feed_service.dart';
 import 'news_notification_poll.dart';
 
-const newsCheckTask = 'com.example.rgn_news.rss_check';
+const newsCheckTask = 'it.davideferrara.amarantofeed.rss_check';
 const _channel = AndroidNotificationChannel(
   'reggina_news',
   'Notizie Reggina',

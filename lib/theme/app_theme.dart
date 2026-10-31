@@ -62,6 +62,18 @@ abstract final class AppTheme {
         ),
       );
 
+  static BoxDecoration subtlePanel(BuildContext context, double radius) =>
+      BoxDecoration(
+        color: isDark(context)
+            ? Colors.white.withValues(alpha: 0.08)
+            : Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outlineVariant
+              .withValues(alpha: isDark(context) ? 0.35 : 1),
+        ),
+      );
+
   static ThemeData get light => _build(Brightness.light);
   static ThemeData get dark => _build(Brightness.dark);
 

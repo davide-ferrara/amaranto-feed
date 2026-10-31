@@ -16,10 +16,10 @@ serial = os.environ.get('ANDROID_SERIAL', 'emulator-5554')
 command = [adb, '-s', serial]
 output = Path(sys.argv[1] if len(sys.argv) > 1 else '/tmp/amaranto-launch')
 output.mkdir(parents=True, exist_ok=True)
-subprocess.run(command + ['shell', 'am', 'force-stop', 'com.example.rgn_news'], check=True)
+subprocess.run(command + ['shell', 'am', 'force-stop', 'it.davideferrara.amarantofeed'], check=True)
 start = time.monotonic()
 launch = subprocess.Popen(command + [
-    'shell', 'am', 'start', '-W', '-n', 'com.example.rgn_news/.MainActivity',
+    'shell', 'am', 'start', '-W', '-n', 'it.davideferrara.amarantofeed/.MainActivity',
 ], stdout=subprocess.DEVNULL)
 for index in range(30):
     frame = output / f'{index:02d}.png'

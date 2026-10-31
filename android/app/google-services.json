@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "908224456872",
+    "project_id": "amaranto-feed",
+    "storage_bucket": "amaranto-feed.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:908224456872:android:4efe5a97ec3d87e5fafa9d",
+        "android_client_info": {
+          "package_name": "it.davideferrara.amarantofeed"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "908224456872-d3smkdt12qm2eg26kp38ug7dcprsgq4r.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "it.davideferrara.amarantofeed",
+            "certificate_hash": "9c35d11209bf1147d876e923816d076c904f3877"
+          }
+        },
+        {
+          "client_id": "908224456872-t78ncn3c3jmv3jeem1h6on7bjbujmkes.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "it.davideferrara.amarantofeed",
+            "certificate_hash": "cbfbf7030597ce10f718694ee6eff5eccc9ecbb8"
+          }
+        },
+        {
+          "client_id": "908224456872-na7u1ob68kes684kmnc2g3e9nfvrv2qm.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDYe6RHfzgzVeeW3G9KdX3GPHVIKT-rUGI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "908224456872-na7u1ob68kes684kmnc2g3e9nfvrv2qm.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

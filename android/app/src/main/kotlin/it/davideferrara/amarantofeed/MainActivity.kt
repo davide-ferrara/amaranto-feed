@@ -1,4 +1,4 @@
-package com.example.rgn_news
+package it.davideferrara.amarantofeed
 
 import android.content.res.Configuration
 import android.os.Build

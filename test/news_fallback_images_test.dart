@@ -1,7 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:rgn_news/services/news_fallback_images.dart';
+import 'package:amaranto_feed/services/news_fallback_images.dart';
 
 void main() {
   test(
