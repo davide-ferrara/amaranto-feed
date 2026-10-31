@@ -5,7 +5,7 @@
 	<key>UIBackgroundModes</key>
 	<array><string>fetch</string></array>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
-	<array><string>com.example.rgn_news.rss_check</string></array>
+	<array><string>it.davideferrara.amarantofeed.rss_check</string></array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

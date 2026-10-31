@@ -14,7 +14,7 @@ import UserNotifications
       GeneratedPluginRegistrant.register(with: registry)
     }
     WorkmanagerPlugin.registerPeriodicTask(
-      withIdentifier: "com.example.rgn_news.rss_check",
+      withIdentifier: "it.davideferrara.amarantofeed.rss_check",
       earliestBeginInSeconds: NSNumber(value: 30 * 60)
     )
     UNUserNotificationCenter.current().delegate = self

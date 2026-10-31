@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -8,25 +10,38 @@ import 'services/lnd_data_service.dart';
 import 'services/news_feed_service.dart';
 import 'services/news_fallback_images.dart';
 import 'services/news_notifications.dart';
-import 'widgets/news_notification_settings.dart';
 import 'widgets/release_update_button.dart';
+import 'widgets/chat_page.dart';
+import 'widgets/settings_page.dart';
+import 'widgets/account_page.dart';
+import 'widgets/auth_entry_gate.dart';
 import 'theme/app_theme.dart';
 
 final _navigatorKey = GlobalKey<NavigatorState>();
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const RgnNewsApp());
+  var firebaseReady = false;
+  try {
+    await Firebase.initializeApp();
+    firebaseReady = true;
+  } on Exception catch (error) {
+    debugPrint('Firebase initialization failed: $error');
+  }
+  runApp(AmarantoFeedApp(firebaseReady: firebaseReady));
 }
 
-class RgnNewsApp extends StatefulWidget {
-  const RgnNewsApp({super.key});
+class AmarantoFeedApp extends StatefulWidget {
+  const AmarantoFeedApp({this.firebaseReady = false, super.key});
+
+  final bool firebaseReady;
 
   @override
-  State<RgnNewsApp> createState() => _RgnNewsAppState();
+  State<AmarantoFeedApp> createState() => _AmarantoFeedAppState();
 }
 
-class _RgnNewsAppState extends State<RgnNewsApp> with WidgetsBindingObserver {
+class _AmarantoFeedAppState extends State<AmarantoFeedApp>
+    with WidgetsBindingObserver {
   ThemeMode _themeMode = ThemeMode.system;
 
   @override
@@ -85,7 +100,14 @@ class _RgnNewsAppState extends State<RgnNewsApp> with WidgetsBindingObserver {
       themeMode: _themeMode,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
-      home: AppShell(themeMode: _themeMode, onThemeModeChanged: _setThemeMode),
+      home: AuthEntryGate(
+        firebaseReady: widget.firebaseReady,
+        appBuilder: (_) => AppShell(
+          themeMode: _themeMode,
+          onThemeModeChanged: _setThemeMode,
+          firebaseReady: widget.firebaseReady,
+        ),
+      ),
     );
   }
 }
@@ -94,10 +116,12 @@ class AppShell extends StatefulWidget {
   const AppShell({
     required this.themeMode,
     required this.onThemeModeChanged,
+    required this.firebaseReady,
     super.key,
   });
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeModeChanged;
+  final bool firebaseReady;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -132,17 +156,14 @@ class _AppShellState extends State<AppShell> {
             controller: _pageController,
             onPageChanged: (index) => setState(() => _selectedIndex = index),
             children: [
-              const PlaceholderPage(
-                icon: Icons.forum_outlined,
-                title: 'Chat',
-                description: 'Lo spazio della community verrà aggiunto in una fase successiva.',
-              ),
+              ChatPage(firebaseReady: widget.firebaseReady),
               LndFixturesPage(service: _lndService),
               FeedPage(key: _feedKey, lndService: _lndService),
               LndStandingsPage(service: _lndService),
               ProfilePage(
                 themeMode: widget.themeMode,
                 onThemeModeChanged: widget.onThemeModeChanged,
+                firebaseReady: widget.firebaseReady,
               ),
             ],
           ),
@@ -176,7 +197,7 @@ class _BottomNavBar extends StatelessWidget {
   static const _items = [
     (Icons.forum_outlined, Icons.forum_rounded, 'Chat'),
     (Icons.calendar_month_outlined, Icons.calendar_month_rounded, 'Calendario'),
-    (Icons.dynamic_feed_outlined, Icons.dynamic_feed_rounded, 'Feed'),
+    (Icons.dynamic_feed_outlined, Icons.dynamic_feed_rounded, 'Notizie'),
     (Icons.leaderboard_outlined, Icons.leaderboard_rounded, 'Classifica'),
     (Icons.person_outline_rounded, Icons.person_rounded, 'Profilo'),
   ];
@@ -1744,10 +1765,12 @@ class ProfilePage extends StatelessWidget {
   const ProfilePage({
     required this.themeMode,
     required this.onThemeModeChanged,
+    required this.firebaseReady,
     super.key,
   });
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeModeChanged;
+  final bool firebaseReady;
 
   @override
   Widget build(BuildContext context) => ListView(
@@ -1759,66 +1782,170 @@ class ProfilePage extends StatelessWidget {
             ?.copyWith(fontWeight: FontWeight.w900),
       ),
       const SizedBox(height: 18),
-      Container(
-        decoration: AppTheme.panel(context, 20),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: RadioGroup<ThemeMode>(
-            groupValue: themeMode,
-            onChanged: (value) {
-              if (value != null) onThemeModeChanged(value);
-            },
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.brightness_6_rounded),
-                    const SizedBox(width: 12),
-                    Text(
-                      'Tema',
-                      style: Theme.of(context).textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                  ],
+      if (firebaseReady)
+        StreamBuilder<User?>(
+          stream: FirebaseAuth.instance.authStateChanges(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Center(child: CircularProgressIndicator()),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  'Per impostazione predefinita segue il dispositivo.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                RadioListTile<ThemeMode>(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  value: ThemeMode.system,
-
-                  title: const Text('Sistema'),
-                ),
-                RadioListTile<ThemeMode>(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  value: ThemeMode.light,
-
-                  title: const Text('Chiaro'),
-                ),
-                RadioListTile<ThemeMode>(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  value: ThemeMode.dark,
-
-                  title: const Text('Scuro'),
-                ),
-              ],
+              );
+            }
+            final user = snapshot.data;
+            if (user == null) {
+              return _ProfileAccountCard(
+                title: 'Ciao tifoso',
+                subtitle: 'Accedi con Google dalla scheda Chat',
+                icon: Icons.person_outline_rounded,
+              );
+            }
+            return _ProfileAccountCard(
+              title: user.displayName?.trim().isNotEmpty == true
+                  ? user.displayName!.trim()
+                  : 'Google account',
+              subtitle: user.email ?? '',
+              photoUrl: user.photoURL,
+              icon: Icons.person_rounded,
+              signedIn: true,
+            );
+          },
+        )
+      else
+        const _ProfileAccountCard(
+          title: 'Account non disponibile',
+          subtitle: 'Firebase non è connesso',
+          icon: Icons.cloud_off_outlined,
+        ),
+      const SizedBox(height: 16),
+      _ProfileNavigationTile(
+        icon: Icons.manage_accounts_outlined,
+        title: 'Account',
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => AccountPage(firebaseReady: firebaseReady),
+          ),
+        ),
+      ),
+      const SizedBox(height: 10),
+      _ProfileNavigationTile(
+        icon: Icons.settings_outlined,
+        title: 'Impostazioni',
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SettingsPage(
+              themeMode: themeMode,
+              onThemeModeChanged: onThemeModeChanged,
             ),
           ),
         ),
       ),
-      const SizedBox(height: 18),
-      const NewsNotificationSettings(),
     ],
+  );
+}
+
+class _ProfileNavigationTile extends StatelessWidget {
+  const _ProfileNavigationTile({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: AppTheme.isDark(context)
+        ? Colors.white.withValues(alpha: 0.08)
+        : Theme.of(context).colorScheme.surface,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(16),
+      side: BorderSide(
+        color: Theme.of(context).colorScheme.outlineVariant
+            .withValues(alpha: AppTheme.isDark(context) ? 0.35 : 1),
+      ),
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+      leading: Icon(icon),
+      title: Text(title),
+      trailing: const Icon(Icons.chevron_right_rounded),
+      onTap: onTap,
+    ),
+  );
+}
+
+class _ProfileAccountCard extends StatelessWidget {
+  const _ProfileAccountCard({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    this.photoUrl,
+    this.signedIn = false,
+  });
+
+  final String title;
+  final String subtitle;
+  final String? photoUrl;
+  final IconData icon;
+  final bool signedIn;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    decoration: AppTheme.subtlePanel(context, 18),
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    child: Row(
+      children: [
+        CircleAvatar(
+          radius: 25,
+          backgroundImage: photoUrl == null ? null : NetworkImage(photoUrl!),
+          child: photoUrl == null ? Icon(icon, size: 30) : null,
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              if (subtitle.isNotEmpty) ...[
+                const SizedBox(height: 3),
+                Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+              ],
+              if (signedIn) ...[
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.check_circle_rounded,
+                      size: 14,
+                      color: AppTheme.isDark(context)
+                          ? AppPalette.gold
+                          : Colors.green.shade700,
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      'Accesso effettuato con Google',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    ),
   );
 }
 

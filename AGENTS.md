@@ -1,5 +1,6 @@
 # Project workflow
 
+- The app's user-facing language must be Italian. Keep UI labels, messages, dialogs, and notifications in Italian.
 - Flutter is pinned in `.fvmrc` (3.47.7). Use `./tool/dev.sh format`, `analyze`, `test`, `run`, or `install`; do not search for Flutter, Dart, Android SDK, or ADB paths on each task.
 - FVM's SDK cache is `/home/dff/fvm/versions` in this environment. The project-local `.fvm/flutter_sdk` link is generated and ignored by Git.
 - Android SDK and ADB are at `/home/dff/Android/Sdk` and `/home/dff/Android/Sdk/platform-tools/adb`. `./tool/dev.sh` resolves these and selects the sole connected device, preferring a sole emulator when multiple targets exist. Set `ANDROID_SERIAL` to override the selection.

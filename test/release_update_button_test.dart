@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:rgn_news/services/release_update_service.dart';
-import 'package:rgn_news/theme/app_theme.dart';
-import 'package:rgn_news/widgets/release_update_button.dart';
+import 'package:amaranto_feed/services/release_update_service.dart';
+import 'package:amaranto_feed/theme/app_theme.dart';
+import 'package:amaranto_feed/widgets/release_update_button.dart';
 
 import 'release_update_service_test.dart' show release;
 

@@ -4,8 +4,8 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:rgn_news/services/lnd_data_service.dart';
-import 'package:rgn_news/services/lnd_page_parser.dart';
+import 'package:amaranto_feed/services/lnd_data_service.dart';
+import 'package:amaranto_feed/services/lnd_page_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/lnd_fixture.dart';

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:rgn_news/models/lnd_data.dart';
+import 'package:amaranto_feed/models/lnd_data.dart';
 
 void main() {
   test('deserializza i dati locali di classifica e calendario', () {
