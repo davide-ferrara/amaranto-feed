@@ -342,7 +342,7 @@ class _FeedPageState extends State<FeedPage> {
   }
 
   void _refresh() {
-    setState(() => _articles = _feedService.fetchLatest());
+    setState(() => _articles = _feedService.fetchLatest(forceRefresh: true));
   }
 
   Future<void> _refreshFromGesture() {
@@ -352,7 +352,7 @@ class _FeedPageState extends State<FeedPage> {
   }
 
   Future<void> _performRefresh() async {
-    final refresh = _feedService.fetchLatest();
+    final refresh = _feedService.fetchLatest(forceRefresh: true);
     setState(() {
       _articles = refresh;
     });
