@@ -6,29 +6,15 @@ import 'models/news_article.dart';
 import 'models/lnd_data.dart';
 import 'services/lnd_data_service.dart';
 import 'services/news_feed_service.dart';
+import 'services/news_fallback_images.dart';
+import 'services/news_notifications.dart';
+import 'widgets/news_notification_settings.dart';
+import 'theme/app_theme.dart';
 
-const _ink = Color(0xFF201B1D);
-const _mutedInk = Color(0xFF766D70);
-const _surface = Color(0xFFFFFBFA);
-const _page = Color(0xFFF5F1F0);
-const _accent = Color(0xFF841230);
-const _playoffOrange = Color(0xFFE58436);
-const _promotionGreen = Color(0xFF3E9957);
-const _goldLight = Color(0xFFE4CF7E);
-const _goldDark = Color(0xFFB26D26);
-const _goldGradient = LinearGradient(
-  begin: Alignment.topLeft,
-  end: Alignment.bottomRight,
-  colors: [_goldLight, _goldDark],
-);
-const _amarantoGradient = LinearGradient(
-  begin: Alignment.topLeft,
-  end: Alignment.bottomRight,
-  colors: [_accent, Color(0xFF3F091B)],
-);
-const _line = Color(0xFFE8DEDF);
+final _navigatorKey = GlobalKey<NavigatorState>();
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const RgnNewsApp());
 }
 
@@ -39,12 +25,22 @@ class RgnNewsApp extends StatefulWidget {
   State<RgnNewsApp> createState() => _RgnNewsAppState();
 }
 
-class _RgnNewsAppState extends State<RgnNewsApp> {
+class _RgnNewsAppState extends State<RgnNewsApp> with WidgetsBindingObserver {
   ThemeMode _themeMode = ThemeMode.system;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      NewsNotifications.instance.initialize((article) {
+        _navigatorKey.currentState?.push(
+          MaterialPageRoute<void>(
+            builder: (_) => ArticlePage(article: article),
+          ),
+        );
+      });
+    });
     SharedPreferences.getInstance().then((prefs) {
       if (mounted) {
         final stored = prefs.getString('theme_mode');
@@ -60,6 +56,19 @@ class _RgnNewsAppState extends State<RgnNewsApp> {
     });
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      NewsNotifications.instance.refreshPermission();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
   Future<void> _setThemeMode(ThemeMode value) async {
     setState(() => _themeMode = value);
     final prefs = await SharedPreferences.getInstance();
@@ -68,45 +77,13 @@ class _RgnNewsAppState extends State<RgnNewsApp> {
 
   @override
   Widget build(BuildContext context) {
-    final lightColors = ColorScheme.fromSeed(
-      seedColor: _accent,
-      brightness: Brightness.light,
-      surface: _surface,
-      onSurface: _ink,
-      outline: _line,
-    );
-    final darkColors = ColorScheme.fromSeed(
-      seedColor: _accent,
-      brightness: Brightness.dark,
-      surface: const Color(0xFF21191D),
-      onSurface: const Color(0xFFF5ECEF),
-      outline: const Color(0xFF58464D),
-    );
-
     return MaterialApp(
-      title: 'RGN News',
+      title: 'Amaranto Feed',
+      navigatorKey: _navigatorKey,
       debugShowCheckedModeBanner: false,
       themeMode: _themeMode,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: lightColors,
-        scaffoldBackgroundColor: _page,
-        textTheme: ThemeData.light().textTheme.apply(
-          bodyColor: _ink,
-          displayColor: _ink,
-        ),
-      ),
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        colorScheme: darkColors,
-        scaffoldBackgroundColor: const Color(0xFF171215),
-        cardColor: const Color(0xFF21191D),
-        textTheme: ThemeData.dark().textTheme.apply(
-          bodyColor: const Color(0xFFF5ECEF),
-          displayColor: const Color(0xFFF5ECEF),
-        ),
-      ),
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
       home: AppShell(themeMode: _themeMode, onThemeModeChanged: _setThemeMode),
     );
   }
@@ -143,25 +120,31 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
+    final showGradient = AppTheme.isDark(context);
     return Scaffold(
-      body: SafeArea(
-        child: PageView(
-          controller: _pageController,
-          onPageChanged: (index) => setState(() => _selectedIndex = index),
-          children: [
-            LndStandingsPage(service: _lndService),
-            LndFixturesPage(service: _lndService),
-            FeedPage(key: _feedKey, lndService: _lndService),
-            const PlaceholderPage(
-              icon: Icons.forum_outlined,
-              title: 'Chat',
-              description: 'Lo spazio della community verrà aggiunto in una fase successiva.',
-            ),
-            ProfilePage(
-              themeMode: widget.themeMode,
-              onThemeModeChanged: widget.onThemeModeChanged,
-            ),
-          ],
+      body: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: showGradient ? AppPalette.amarantoGradient : null,
+        ),
+        child: SafeArea(
+          child: PageView(
+            controller: _pageController,
+            onPageChanged: (index) => setState(() => _selectedIndex = index),
+            children: [
+              const PlaceholderPage(
+                icon: Icons.forum_outlined,
+                title: 'Chat',
+                description: 'Lo spazio della community verrà aggiunto in una fase successiva.',
+              ),
+              LndFixturesPage(service: _lndService),
+              FeedPage(key: _feedKey, lndService: _lndService),
+              LndStandingsPage(service: _lndService),
+              ProfilePage(
+                themeMode: widget.themeMode,
+                onThemeModeChanged: widget.onThemeModeChanged,
+              ),
+            ],
+          ),
         ),
       ),
       bottomNavigationBar: _BottomNavBar(
@@ -190,17 +173,17 @@ class _BottomNavBar extends StatelessWidget {
   final ValueChanged<int> onSelected;
 
   static const _items = [
-    (Icons.leaderboard_outlined, Icons.leaderboard_rounded, 'Classifica'),
+    (Icons.forum_outlined, Icons.forum_rounded, 'Chat'),
     (Icons.calendar_month_outlined, Icons.calendar_month_rounded, 'Calendario'),
     (Icons.dynamic_feed_outlined, Icons.dynamic_feed_rounded, 'Feed'),
-    (Icons.forum_outlined, Icons.forum_rounded, 'Chat'),
+    (Icons.leaderboard_outlined, Icons.leaderboard_rounded, 'Classifica'),
     (Icons.person_outline_rounded, Icons.person_rounded, 'Profilo'),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(gradient: _amarantoGradient),
+      decoration: const BoxDecoration(gradient: AppPalette.amarantoGradient),
       child: SafeArea(
         top: false,
         child: SizedBox(
@@ -261,7 +244,7 @@ class _BottomNavItem extends StatelessWidget {
                 height: 32,
                 decoration: selected
                     ? const BoxDecoration(
-                        gradient: _goldGradient,
+                        gradient: AppPalette.goldGradient,
                         borderRadius: BorderRadius.all(Radius.circular(18)),
                       )
                     : null,
@@ -269,7 +252,7 @@ class _BottomNavItem extends StatelessWidget {
                 child: Icon(
                   selected ? selectedIcon : icon,
                   size: emphasized ? 29 : 23,
-                  color: selected ? _accent : const Color(0xFFDDBFC7),
+                  color: selected ? AppPalette.amaranto : AppPalette.navMuted,
                 ),
               ),
               const SizedBox(height: 3),
@@ -280,7 +263,7 @@ class _BottomNavItem extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 10,
                   fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                  color: selected ? Colors.white : const Color(0xFFDDBFC7),
+                  color: selected ? Colors.white : AppPalette.navMuted,
                 ),
               ),
             ],
@@ -303,6 +286,7 @@ class FeedPage extends StatefulWidget {
 class _FeedPageState extends State<FeedPage> {
   final ScrollController _scrollController = ScrollController();
   late final NewsFeedService _feedService;
+  final NewsFallbackImages _fallbackImages = NewsFallbackImages();
   late Future<List<NewsArticle>> _articles;
   late Future<LndDataSnapshot> _sportsData;
   Future<void>? _refreshTask;
@@ -371,62 +355,109 @@ class _FeedPageState extends State<FeedPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return FutureBuilder<LndDataSnapshot>(
       future: _sportsData,
       builder: (context, sportsSnapshot) {
         final fixture = sportsSnapshot.hasData
             ? _nextRegginaFixture(sportsSnapshot.data!.fixtures)
             : null;
-        return Stack(
-          children: [
-            NotificationListener<ScrollNotification>(
-              onNotification: _onScroll,
-              child: RefreshIndicator(
-                color: _accent,
-                backgroundColor: Theme.of(context).colorScheme.surface,
-                onRefresh: _refreshFromGesture,
-                child: ListView(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
-                  children: [
-                    Text(
-                      'Notizie',
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(fontWeight: FontWeight.w900),
-                    ),
-                    const SizedBox(height: 16),
-                    _NewsFeed(future: _articles, onRetry: _refresh),
-                    const SizedBox(height: 20),
-                    const _NewsAttribution(),
-                  ],
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: isDark ? null : Theme.of(context).scaffoldBackgroundColor,
+          ),
+          child: Stack(
+            children: [
+              NotificationListener<ScrollNotification>(
+                onNotification: _onScroll,
+                child: RefreshIndicator(
+                  color: Theme.of(context).colorScheme.primary,
+                  backgroundColor: Theme.of(context).colorScheme.surface,
+                  onRefresh: _refreshFromGesture,
+                  child: ListView(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.only(bottom: 120),
+                    children: [
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          20,
+                          20,
+                          20,
+                          isDark ? 20 : 0,
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: EdgeInsets.all(isDark ? 4 : 0),
+                              decoration: BoxDecoration(
+                                color: isDark ? AppPalette.surface : null,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Image.asset(
+                                'assets/branding/amaranto_feed_mark.png',
+                                width: 38,
+                                height: 38,
+                                excludeFromSemantics: true,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Flexible(
+                              child: Text(
+                                'Amaranto Feed',
+                                style: Theme.of(context).textTheme.headlineSmall
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w900,
+                                      color: isDark ? Colors.white : null,
+                                    ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: _NewsFeed(
+                          future: _articles,
+                          onRetry: _refresh,
+                          fallbackImages: _fallbackImages,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 20),
+                        child: _NewsAttribution(),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            Positioned(
-              left: 16,
-              right: 16,
-              bottom: 12,
-              child: AnimatedSlide(
-                duration: const Duration(milliseconds: 260),
-                curve: Curves.easeInOutCubic,
-                offset: _showMatchBanner ? Offset.zero : const Offset(0, 1.5),
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 180),
-                  opacity: _showMatchBanner ? 1 : 0,
-                  child: IgnorePointer(
-                    ignoring: !_showMatchBanner,
-                    child: MatchMiniBanner(
-                      fixture: fixture,
-                      isLoading:
-                          sportsSnapshot.connectionState ==
-                          ConnectionState.waiting,
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => MatchDetailsPage(
-                            fixture: fixture,
-                            isLoading:
-                                sportsSnapshot.connectionState ==
-                                ConnectionState.waiting,
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 12,
+                child: AnimatedSlide(
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeInOutCubic,
+                  offset: _showMatchBanner ? Offset.zero : const Offset(0, 1.5),
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 180),
+                    opacity: _showMatchBanner ? 1 : 0,
+                    child: IgnorePointer(
+                      ignoring: !_showMatchBanner,
+                      child: MatchMiniBanner(
+                        fixture: fixture,
+                        isLoading:
+                            sportsSnapshot.connectionState ==
+                            ConnectionState.waiting,
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => MatchDetailsPage(
+                              fixture: fixture,
+                              isLoading:
+                                  sportsSnapshot.connectionState ==
+                                  ConnectionState.waiting,
+                            ),
                           ),
                         ),
                       ),
@@ -434,8 +465,8 @@ class _FeedPageState extends State<FeedPage> {
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         );
       },
     );
@@ -443,7 +474,13 @@ class _FeedPageState extends State<FeedPage> {
 }
 
 class _NewsFeed extends StatelessWidget {
-  const _NewsFeed({required this.future, required this.onRetry});
+  const _NewsFeed({
+    required this.future,
+    required this.onRetry,
+    required this.fallbackImages,
+  });
+
+  final NewsFallbackImages fallbackImages;
 
   final Future<List<NewsArticle>> future;
   final VoidCallback onRetry;
@@ -456,7 +493,7 @@ class _NewsFeed extends StatelessWidget {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Padding(
             padding: EdgeInsets.symmetric(vertical: 36),
-            child: Center(child: CircularProgressIndicator(color: _accent)),
+            child: Center(child: CircularProgressIndicator()),
           );
         }
         if (snapshot.hasError) {
@@ -482,7 +519,10 @@ class _NewsFeed extends StatelessWidget {
           children: [
             for (var index = 0; index < articles.length; index++) ...[
               if (index > 0) const SizedBox(height: 12),
-              NewsArticleCard(article: articles[index]),
+              NewsArticleCard(
+                article: articles[index],
+                fallbackImages: fallbackImages,
+              ),
             ],
           ],
         );
@@ -508,14 +548,10 @@ class _FeedMessage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-      ),
+      decoration: AppTheme.panel(context, 20),
       child: Column(
         children: [
-          Icon(icon, size: 28, color: _accent),
+          Icon(icon, size: 28),
           const SizedBox(height: 9),
           Text(text, textAlign: TextAlign.center),
           const SizedBox(height: 6),
@@ -527,14 +563,25 @@ class _FeedMessage extends StatelessWidget {
 }
 
 class NewsArticleCard extends StatelessWidget {
-  const NewsArticleCard({required this.article, super.key});
+  const NewsArticleCard({
+    required this.article,
+    required this.fallbackImages,
+    super.key,
+  });
 
   final NewsArticle article;
+  final NewsFallbackImages fallbackImages;
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final secondaryColor = isDark
+        ? Colors.white
+        : Theme.of(context).colorScheme.onSurfaceVariant;
     return Material(
-      color: Theme.of(context).colorScheme.surface,
+      color: isDark
+          ? Colors.transparent
+          : Theme.of(context).colorScheme.surface,
       borderRadius: BorderRadius.circular(23),
       child: InkWell(
         onTap: () => Navigator.of(context).push(
@@ -546,9 +593,16 @@ class NewsArticleCard extends StatelessWidget {
         child: Container(
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
+            gradient: isDark ? AppPalette.amarantoGradient : null,
+            borderRadius: BorderRadius.circular(23),
+          ),
+          foregroundDecoration: BoxDecoration(
             borderRadius: BorderRadius.circular(23),
             border: Border.all(
-              color: Theme.of(context).colorScheme.outlineVariant,
+              color: isDark
+                  ? AppPalette.gold
+                  : Theme.of(context).colorScheme.outlineVariant,
+              width: isDark ? 1.25 : 1,
             ),
           ),
           child: Column(
@@ -561,10 +615,14 @@ class NewsArticleCard extends StatelessWidget {
                   width: double.infinity,
                   fit: BoxFit.cover,
                   errorBuilder: (context, error, stackTrace) =>
-                      const _NewsImagePlaceholder(),
+                      _NewsImagePlaceholder(
+                        imagePath: fallbackImages.forArticle(article.url),
+                      ),
                 )
               else
-                const _NewsImagePlaceholder(),
+                _NewsImagePlaceholder(
+                  imagePath: fallbackImages.forArticle(article.url),
+                ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
                 child: Column(
@@ -573,32 +631,47 @@ class NewsArticleCard extends StatelessWidget {
                     Row(
                       children: [
                         Expanded(
-                          child: Text(
-                            article.source.toUpperCase(),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.labelSmall
-                                ?.copyWith(
-                                  color: _accent,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 0.8,
+                          child: Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  article.source.toUpperCase(),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.labelSmall
+                                      ?.copyWith(
+                                        color: isDark
+                                            ? Colors.white
+                                            : AppPalette.amaranto,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 0.8,
+                                      ),
                                 ),
+                              ),
+                              if (article.isOfficial) ...[
+                                const SizedBox(width: 5),
+                                const Tooltip(
+                                  message: 'Fonte ufficiale',
+                                  child: Icon(
+                                    Icons.star_rounded,
+                                    size: 15,
+                                    color: AppPalette.goldDark,
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                         Icon(
                           Icons.schedule_rounded,
                           size: 13,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          color: secondaryColor,
                         ),
                         const SizedBox(width: 4),
                         Text(
                           _formatPublishedAt(article.publishedAt),
                           style: Theme.of(context).textTheme.labelSmall
-                              ?.copyWith(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
-                              ),
+                              ?.copyWith(color: secondaryColor),
                         ),
                       ],
                     ),
@@ -607,8 +680,11 @@ class NewsArticleCard extends StatelessWidget {
                       article.title,
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium
-                          ?.copyWith(height: 1.22, fontWeight: FontWeight.w800),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        height: 1.22,
+                        fontWeight: FontWeight.w800,
+                        color: isDark ? Colors.white : null,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Row(
@@ -617,9 +693,7 @@ class NewsArticleCard extends StatelessWidget {
                         Text(
                           'Leggi dalla fonte',
                           style: TextStyle(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant,
+                            color: secondaryColor,
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
                           ),
@@ -628,7 +702,7 @@ class NewsArticleCard extends StatelessWidget {
                         Icon(
                           Icons.open_in_new_rounded,
                           size: 14,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          color: secondaryColor,
                         ),
                       ],
                     ),
@@ -644,15 +718,18 @@ class NewsArticleCard extends StatelessWidget {
 }
 
 class _NewsImagePlaceholder extends StatelessWidget {
-  const _NewsImagePlaceholder();
+  const _NewsImagePlaceholder({required this.imagePath});
+
+  final String imagePath;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return Image.asset(
+      imagePath,
       height: 156,
       width: double.infinity,
-      color: const Color(0xFFF0E7E9),
-      child: const Icon(Icons.newspaper_rounded, size: 38, color: _accent),
+      fit: BoxFit.cover,
+      excludeFromSemantics: true,
     );
   }
 }
@@ -794,11 +871,11 @@ class MatchMiniBanner extends StatelessWidget {
       height: 70,
       padding: const EdgeInsets.all(1.5),
       decoration: BoxDecoration(
-        gradient: _goldGradient,
+        gradient: AppPalette.goldGradient,
         borderRadius: BorderRadius.circular(18),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x30000000),
+            color: AppPalette.shadow,
             blurRadius: 14,
             offset: Offset(0, 6),
           ),
@@ -810,7 +887,7 @@ class MatchMiniBanner extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         child: Ink(
           decoration: BoxDecoration(
-            gradient: _amarantoGradient,
+            gradient: AppPalette.amarantoGradient,
             borderRadius: BorderRadius.circular(16.5),
           ),
           child: InkWell(
@@ -847,7 +924,7 @@ class MatchMiniBanner extends StatelessWidget {
                         Text(
                           date,
                           style: const TextStyle(
-                            color: Color(0xFFE8D3D8),
+                            color: AppPalette.bannerMuted,
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
                           ),
@@ -897,7 +974,7 @@ class _MiniTeam extends StatelessWidget {
               child: Text(
                 initials,
                 style: const TextStyle(
-                  color: _accent,
+                  color: AppPalette.amaranto,
                   fontSize: 9,
                   fontWeight: FontWeight.w900,
                 ),
@@ -910,7 +987,7 @@ class _MiniTeam extends StatelessWidget {
                 child: Text(
                   initials,
                   style: const TextStyle(
-                    color: _accent,
+                    color: AppPalette.amaranto,
                     fontSize: 9,
                     fontWeight: FontWeight.w900,
                   ),
@@ -937,7 +1014,6 @@ class MatchDetailsPage extends StatelessWidget {
         ? ''
         : (fixture!.venue.isNotEmpty ? fixture!.venue : fixture!.address);
     return Scaffold(
-      backgroundColor: _page,
       appBar: AppBar(
         title: const Text('Prossima partita'),
         leading: IconButton(
@@ -1008,14 +1084,10 @@ class _MatchInfoTile extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     margin: const EdgeInsets.only(bottom: 10),
     padding: const EdgeInsets.all(15),
-    decoration: BoxDecoration(
-      color: Theme.of(context).colorScheme.surface,
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-    ),
+    decoration: AppTheme.panel(context, 16),
     child: Row(
       children: [
-        Icon(icon, color: _accent, size: 21),
+        Icon(icon, size: 21),
         const SizedBox(width: 13),
         Expanded(
           child: Column(
@@ -1065,10 +1137,10 @@ class MatchBanner extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(26),
-        gradient: _amarantoGradient,
+        gradient: AppPalette.amarantoGradient,
         boxShadow: const [
           BoxShadow(
-            color: Color(0x1D4B2732),
+            color: AppPalette.brandShadow,
             blurRadius: 20,
             offset: Offset(0, 10),
           ),
@@ -1089,10 +1161,7 @@ class MatchBanner extends StatelessWidget {
                   height: 175,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: const Color(0x18FFFFFF),
-                      width: 28,
-                    ),
+                    border: Border.all(color: AppPalette.glass, width: 28),
                   ),
                 ),
               ),
@@ -1105,7 +1174,7 @@ class MatchBanner extends StatelessWidget {
                         const Icon(
                           Icons.sports_soccer_rounded,
                           size: 16,
-                          color: Color(0xFFF2C8D0),
+                          color: AppPalette.labelOnBrand,
                         ),
                         const SizedBox(width: 7),
                         Expanded(
@@ -1117,7 +1186,7 @@ class MatchBanner extends StatelessWidget {
                                 : 'SERIE D · ${fixture!.leg == 'first' ? 'ANDATA' : 'RITORNO'} · ${fixture!.roundNumber}ª GIORNATA',
                             style: Theme.of(context).textTheme.labelSmall
                                 ?.copyWith(
-                                  color: const Color(0xFFF2DDE1),
+                                  color: AppPalette.detailOnBrand,
                                   fontWeight: FontWeight.w800,
                                   letterSpacing: 1,
                                   fontSize: 10,
@@ -1130,13 +1199,13 @@ class MatchBanner extends StatelessWidget {
                             vertical: 4,
                           ),
                           decoration: BoxDecoration(
-                            gradient: _goldGradient,
+                            gradient: AppPalette.goldGradient,
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: const Text(
                             'LND',
                             style: TextStyle(
-                              color: Color(0xFF3F091B),
+                              color: AppPalette.amarantoDark,
                               fontSize: 9,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.6,
@@ -1171,14 +1240,14 @@ class MatchBanner extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 19),
-                    Container(height: 1, color: const Color(0x29FFFFFF)),
+                    Container(height: 1, color: AppPalette.glassLine),
                     const SizedBox(height: 13),
                     Row(
                       children: [
                         Icon(
                           Icons.calendar_today_rounded,
                           size: 14,
-                          color: Color(0xFFF2C8D0),
+                          color: AppPalette.labelOnBrand,
                         ),
                         const SizedBox(width: 7),
                         Expanded(
@@ -1199,7 +1268,7 @@ class MatchBanner extends StatelessWidget {
                         Icon(
                           Icons.stadium_outlined,
                           size: 15,
-                          color: Color(0xFFF2C8D0),
+                          color: AppPalette.labelOnBrand,
                         ),
                         const SizedBox(width: 6),
                         Flexible(
@@ -1212,7 +1281,7 @@ class MatchBanner extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              color: Color(0xFFE7DADD),
+                              color: AppPalette.captionOnBrand,
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
                             ),
@@ -1226,14 +1295,14 @@ class MatchBanner extends StatelessWidget {
                         const Icon(
                           Icons.touch_app_outlined,
                           size: 14,
-                          color: Color(0xFFDABDC3),
+                          color: AppPalette.subtleOnBrand,
                         ),
                         const SizedBox(width: 6),
                         Text(
                           'Dettagli della partita',
                           style: Theme.of(context).textTheme.labelSmall
                               ?.copyWith(
-                                color: const Color(0xFFDABDC3),
+                                color: AppPalette.subtleOnBrand,
                                 fontWeight: FontWeight.w500,
                               ),
                         ),
@@ -1293,9 +1362,9 @@ class _TeamColumn extends StatelessWidget {
           width: 58,
           height: 64,
           decoration: BoxDecoration(
-            color: const Color(0xFFF8F1F2),
+            color: AppPalette.lightTile,
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFFE8DADD)),
+            border: Border.all(color: AppPalette.lightTileBorder),
           ),
           child: logoUrl == null
               ? _TeamInitials(initials: initials)
@@ -1340,12 +1409,12 @@ class _TeamInitials extends StatelessWidget {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        const Icon(Icons.shield_outlined, size: 19, color: _accent),
+        const Icon(Icons.shield_outlined, size: 19, color: AppPalette.amaranto),
         const SizedBox(height: 1),
         Text(
           initials,
           style: const TextStyle(
-            color: _accent,
+            color: AppPalette.amaranto,
             fontSize: 10,
             fontWeight: FontWeight.w900,
             letterSpacing: 0.4,
@@ -1365,15 +1434,15 @@ class _VersusBadge extends StatelessWidget {
       width: 34,
       height: 34,
       decoration: BoxDecoration(
-        gradient: _goldGradient,
+        gradient: AppPalette.goldGradient,
         shape: BoxShape.circle,
-        border: Border.all(color: _goldDark),
+        border: Border.all(color: AppPalette.goldDark),
       ),
       child: const Center(
         child: Text(
           'VS',
           style: TextStyle(
-            color: _accent,
+            color: AppPalette.amaranto,
             fontSize: 10,
             fontWeight: FontWeight.w900,
           ),
@@ -1390,11 +1459,7 @@ class NewsMockCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(23),
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-      ),
+      decoration: AppTheme.panel(context, 23),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1405,7 +1470,10 @@ class NewsMockCard extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [Color(0xFFE5D7D9), Color(0xFFF4EBEC)],
+                colors: [
+                  AppPalette.placeholderTop,
+                  AppPalette.placeholderBottom,
+                ],
               ),
             ),
             child: Stack(
@@ -1434,7 +1502,7 @@ class NewsMockCard extends StatelessWidget {
                     child: const Text(
                       'IMMAGINE ANTEPRIMA',
                       style: TextStyle(
-                        color: _accent,
+                        color: AppPalette.amaranto,
                         fontSize: 9,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.7,
@@ -1448,7 +1516,7 @@ class NewsMockCard extends StatelessWidget {
                   child: Icon(
                     Icons.image_outlined,
                     size: 25,
-                    color: Color(0xFF886F75),
+                    color: AppPalette.placeholderInk,
                   ),
                 ),
               ],
@@ -1464,7 +1532,7 @@ class NewsMockCard extends StatelessWidget {
                     Text(
                       'ESEMPIO FEED',
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: _accent,
+                        color: AppPalette.amaranto,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 1,
                       ),
@@ -1529,21 +1597,17 @@ class NewsPreviewRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-      ),
+      decoration: AppTheme.panel(context, 20),
       child: Row(
         children: [
           Container(
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: const Color(0xFFF1E7E9),
+              color: AppPalette.iconTile,
               borderRadius: BorderRadius.circular(16),
             ),
-            child: Icon(icon, color: _accent),
+            child: Icon(icon, color: AppPalette.amaranto),
           ),
           const SizedBox(width: 13),
           Expanded(
@@ -1553,7 +1617,7 @@ class NewsPreviewRow extends StatelessWidget {
                 Text(
                   category,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: _accent,
+                    color: AppPalette.amaranto,
                     fontWeight: FontWeight.w900,
                     letterSpacing: 0.9,
                   ),
@@ -1632,10 +1696,12 @@ class PlaceholderPage extends StatelessWidget {
             width: 82,
             height: 82,
             decoration: BoxDecoration(
-              color: const Color(0xFFF1E6E8),
+              color: AppTheme.isDark(context)
+                  ? AppPalette.amarantoDark
+                  : AppPalette.chatIconTile,
               borderRadius: BorderRadius.circular(28),
             ),
-            child: Icon(icon, size: 37, color: _accent),
+            child: Icon(icon, size: 37),
           ),
           const SizedBox(height: 22),
           Text(
@@ -1656,17 +1722,11 @@ class PlaceholderPage extends StatelessWidget {
           const SizedBox(height: 18),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(30),
-              border: Border.all(
-                color: Theme.of(context).colorScheme.outlineVariant,
-              ),
-            ),
+            decoration: AppTheme.panel(context, 30),
             child: Text(
               'IN ARRIVO',
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: _accent,
+                color: Theme.of(context).colorScheme.primary,
                 fontWeight: FontWeight.w900,
                 letterSpacing: 1,
               ),
@@ -1698,13 +1758,7 @@ class ProfilePage extends StatelessWidget {
       ),
       const SizedBox(height: 18),
       Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-          ),
-        ),
+        decoration: AppTheme.panel(context, 20),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: RadioGroup<ThemeMode>(
@@ -1717,7 +1771,7 @@ class ProfilePage extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.brightness_6_rounded, color: _accent),
+                    const Icon(Icons.brightness_6_rounded),
                     const SizedBox(width: 12),
                     Text(
                       'Tema',
@@ -1738,21 +1792,21 @@ class ProfilePage extends StatelessWidget {
                   contentPadding: EdgeInsets.zero,
                   dense: true,
                   value: ThemeMode.system,
-                  activeColor: _accent,
+
                   title: const Text('Sistema'),
                 ),
                 RadioListTile<ThemeMode>(
                   contentPadding: EdgeInsets.zero,
                   dense: true,
                   value: ThemeMode.light,
-                  activeColor: _accent,
+
                   title: const Text('Chiaro'),
                 ),
                 RadioListTile<ThemeMode>(
                   contentPadding: EdgeInsets.zero,
                   dense: true,
                   value: ThemeMode.dark,
-                  activeColor: _accent,
+
                   title: const Text('Scuro'),
                 ),
               ],
@@ -1760,6 +1814,8 @@ class ProfilePage extends StatelessWidget {
           ),
         ),
       ),
+      const SizedBox(height: 18),
+      const NewsNotificationSettings(),
     ],
   );
 }
@@ -1795,7 +1851,7 @@ class _LndStandingsPageState extends State<LndStandingsPage> {
             if (snapshot.connectionState == ConnectionState.waiting &&
                 standings.isEmpty)
               const SliverFillRemaining(
-                child: Center(child: CircularProgressIndicator(color: _accent)),
+                child: Center(child: CircularProgressIndicator()),
               )
             else if (snapshot.hasError && standings.isEmpty)
               SliverFillRemaining(child: _LndError(onRetry: _refresh))
@@ -1816,7 +1872,7 @@ class _LndStandingsPageState extends State<LndStandingsPage> {
                   child: Text(
                     'Fonte: LND · dati a scopo informativo; fanno fede i Comunicati Ufficiali.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: _mutedInk, fontSize: 11),
+                    style: TextStyle(fontSize: 11),
                   ),
                 ),
               ),
@@ -1897,7 +1953,7 @@ class _LndFixturesPageState extends State<LndFixturesPage> {
             if (snapshot.connectionState == ConnectionState.waiting &&
                 fixtures.isEmpty)
               const SliverFillRemaining(
-                child: Center(child: CircularProgressIndicator(color: _accent)),
+                child: Center(child: CircularProgressIndicator()),
               )
             else if (snapshot.hasError && fixtures.isEmpty)
               SliverFillRemaining(child: _LndError(onRetry: _refresh))
@@ -1913,7 +1969,7 @@ class _LndFixturesPageState extends State<LndFixturesPage> {
                   child: Text(
                     'Fonte: LND · dati a scopo informativo; fanno fede i Comunicati Ufficiali.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: _mutedInk, fontSize: 11),
+                    style: TextStyle(fontSize: 11),
                   ),
                 ),
               ),
@@ -1954,7 +2010,7 @@ class _LndError extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.cloud_off_outlined, color: _accent, size: 36),
+          const Icon(Icons.cloud_off_outlined, size: 36),
           const SizedBox(height: 12),
           const Text(
             'Non riesco a caricare i dati LND. Controlla la connessione e riprova.',
@@ -1981,10 +2037,7 @@ class _LndUpdatedLabel extends StatelessWidget {
         : 'Aggiornata ${_formatPublishedAt(updatedAt!.toLocal())}';
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 8, 18, 12),
-      child: Text(
-        value,
-        style: const TextStyle(color: _mutedInk, fontSize: 12),
-      ),
+      child: Text(value, style: const TextStyle(fontSize: 12)),
     );
   }
 }
@@ -2008,11 +2061,7 @@ class _StandingsHeader extends StatelessWidget {
   );
 }
 
-const _tableHead = TextStyle(
-  fontSize: 9,
-  color: _mutedInk,
-  fontWeight: FontWeight.w800,
-);
+const _tableHead = TextStyle(fontSize: 9, fontWeight: FontWeight.w800);
 
 class _StandingsLegend extends StatelessWidget {
   const _StandingsLegend();
@@ -2026,26 +2075,26 @@ class _StandingsLegend extends StatelessWidget {
       children: [
         _StandingsLegendItem(
           color: Color.alphaBlend(
-            _promotionGreen.withValues(alpha: 0.16),
+            AppPalette.promotion.withValues(alpha: 0.16),
             Theme.of(context).colorScheme.surface,
           ),
-          borderColor: _promotionGreen.withValues(alpha: 0.45),
+          borderColor: AppPalette.promotion.withValues(alpha: 0.45),
           label: 'Promozione diretta · 1ª',
         ),
         _StandingsLegendItem(
           color: Color.alphaBlend(
-            _playoffOrange.withValues(alpha: 0.16),
+            AppPalette.playoff.withValues(alpha: 0.16),
             Theme.of(context).colorScheme.surface,
           ),
-          borderColor: _playoffOrange.withValues(alpha: 0.45),
+          borderColor: AppPalette.playoff.withValues(alpha: 0.45),
           label: 'Playoff · 2ª–5ª',
         ),
         _StandingsLegendItem(
           color: Color.alphaBlend(
-            _accent.withValues(alpha: 0.16),
+            Theme.of(context).colorScheme.primary.withValues(alpha: 0.16),
             Theme.of(context).colorScheme.surface,
           ),
-          borderColor: _accent.withValues(alpha: 0.45),
+          borderColor: Theme.of(context).colorScheme.primary,
           label: 'Reggina',
         ),
       ],
@@ -2079,11 +2128,7 @@ class _StandingsLegendItem extends StatelessWidget {
       const SizedBox(width: 5),
       Text(
         label,
-        style: const TextStyle(
-          color: _mutedInk,
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
-        ),
+        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
       ),
     ],
   );
@@ -2100,33 +2145,38 @@ class _StandingRow extends StatelessWidget {
         !isReggina && standing.position >= 2 && standing.position <= 5;
     final rowColor = isReggina
         ? Color.alphaBlend(
-            _accent.withValues(alpha: 0.14),
+            AppPalette.amaranto.withValues(alpha: 0.14),
             Theme.of(context).colorScheme.surface,
           )
         : isPlayoff
         ? Color.alphaBlend(
-            _playoffOrange.withValues(alpha: 0.16),
+            AppPalette.playoff.withValues(alpha: 0.16),
             Theme.of(context).colorScheme.surface,
           )
         : isDirectPromotion
         ? Color.alphaBlend(
-            _promotionGreen.withValues(alpha: 0.16),
+            AppPalette.promotion.withValues(alpha: 0.16),
             Theme.of(context).colorScheme.surface,
           )
         : Theme.of(context).colorScheme.surface;
     final statusColor = isReggina
-        ? _accent
+        ? (AppTheme.isDark(context) ? AppPalette.gold : AppPalette.amaranto)
         : isPlayoff
-        ? _playoffOrange
+        ? AppPalette.playoff
         : isDirectPromotion
-        ? _promotionGreen
+        ? AppPalette.promotion
         : Theme.of(context).colorScheme.outlineVariant;
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 2, 12, 2),
       decoration: BoxDecoration(
-        color: rowColor,
+        gradient: AppTheme.isDark(context) ? AppPalette.amarantoGradient : null,
+        color: AppTheme.isDark(context) ? null : rowColor,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: statusColor.withValues(alpha: 0.55)),
+        border: Border.all(
+          color: AppTheme.isDark(context)
+              ? Theme.of(context).colorScheme.outlineVariant
+              : statusColor.withValues(alpha: 0.55),
+        ),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 10),
       child: Row(
@@ -2137,7 +2187,9 @@ class _StandingRow extends StatelessWidget {
               '${standing.position}',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurface,
+                color: isReggina || isPlayoff || isDirectPromotion
+                    ? statusColor
+                    : Theme.of(context).colorScheme.onSurface,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -2151,7 +2203,7 @@ class _StandingRow extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: isReggina
-                    ? _accent
+                    ? Theme.of(context).colorScheme.primary
                     : Theme.of(context).colorScheme.onSurface,
                 fontSize: 12,
                 fontWeight: isReggina ? FontWeight.w900 : FontWeight.w600,
@@ -2179,7 +2231,6 @@ class _StandingRow extends StatelessWidget {
       textAlign: TextAlign.center,
       style: TextStyle(
         fontSize: 11,
-        color: _ink,
         fontWeight: bold ? FontWeight.w900 : FontWeight.w500,
       ),
     ),
@@ -2231,17 +2282,13 @@ class _FixtureCard extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     margin: const EdgeInsets.fromLTRB(14, 0, 14, 10),
     padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: Theme.of(context).colorScheme.surface,
-      borderRadius: BorderRadius.circular(19),
-      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-    ),
+    decoration: AppTheme.panel(context, 19),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            const Icon(Icons.calendar_today_outlined, size: 14, color: _accent),
+            const Icon(Icons.calendar_today_outlined, size: 14),
             const SizedBox(width: 7),
             Expanded(
               child: Text(
@@ -2271,7 +2318,7 @@ class _FixtureCard extends StatelessWidget {
                         '${fixture.homeScore}-${fixture.awayScore}',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: _accent,
+                          color: Theme.of(context).colorScheme.primary,
                           fontWeight: FontWeight.w900,
                           letterSpacing: -0.5,
                         ),

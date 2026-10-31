@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rgn_news/models/lnd_data.dart';
 
 void main() {
-  test('deserializza l’overview REST per classifica e calendario', () {
+  test('deserializza i dati locali di classifica e calendario', () {
     final data = LndDataSnapshot.fromJson({
       'updated_at': '2026-10-15T18:00:00+00:00',
       'source': 'https://gare.lnd.it/',

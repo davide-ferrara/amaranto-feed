@@ -15,6 +15,7 @@ Commands:
   test      Run Flutter tests
   devices   List connected Android devices/emulators
   run       Build and run on the selected Android device
+  preview   Format, analyze, and relaunch on the selected Android device
   install   Install the current Flutter build on the selected Android device
 EOF
 }
@@ -91,7 +92,13 @@ case "$command_name" in
     adb_path="$(resolve_adb)"
     "$adb_path" devices -l
     ;;
+  preview)
+    "$project_root/tool/dev.sh" format
+    "$project_root/tool/dev.sh" analyze
+    "$project_root/tool/dev.sh" run --no-resident "${@:2}"
+    ;;
   run|install)
+    python tool/sync_native_theme.py
     adb_path="$(resolve_adb)"
     device_id="$(select_device "$adb_path")"
     if [[ "$adb_path" == */platform-tools/adb ]]; then
@@ -101,11 +108,10 @@ case "$command_name" in
     fi
     export ANDROID_SDK_ROOT="$android_sdk"
     export ANDROID_HOME="$android_sdk"
-    api_base="${RGN_API_BASE_URL:-http://10.0.2.2:8000}"
     if [[ "$command_name" == "run" ]]; then
-      flutter run -d "$device_id" --dart-define="RGN_API_BASE_URL=$api_base" "${@:2}"
+      flutter run -d "$device_id" "${@:2}"
     else
-      flutter build apk --debug --dart-define="RGN_API_BASE_URL=$api_base" "${@:2}"
+      flutter build apk --debug "${@:2}"
       flutter install -d "$device_id" --debug \
         --use-application-binary=build/app/outputs/flutter-apk/app-debug.apk
     fi

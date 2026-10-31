@@ -11,7 +11,7 @@ Un'app mobile semplice e utile per i tifosi della Reggina 1914, con notizie, inf
 - Il nome della squadra nel documento è scritto correttamente “Reggina”, con due g.
 - Il nome dell'app dovrebbe distinguersi dal nome e dai segni ufficiali della società, così da non suggerire un'app ufficiale.
 - Si cerca un nome breve che richiami chiaramente Reggio, la squadra o i tifosi, senza presentarsi come app ufficiale.
-- Nome scelto: “RGN News”. Sottotitolo: “Le news del calcio reggino”.
+- Nome scelto: “Amaranto Feed”. Sottotitolo: “Le news del calcio reggino”.
 - Il nome è una scelta di prodotto; la disponibilità di marchi simili e di nome su store e domini resta da controllare prima del lancio.
 - Colore principale dell'interfaccia: `#841230`.
 
@@ -62,8 +62,9 @@ Un'app mobile semplice e utile per i tifosi della Reggina 1914, con notizie, inf
 - Le schede inferiori sono Classifica, Calendario, Feed, Chat e Profilo. Il Feed è la scheda iniziale e occupa il centro della barra; si può cambiare scheda con swipe orizzontale o toccando la barra. Toccando Feed mentre è già selezionato, la lista torna in cima e aggiorna le notizie.
 - Il Feed aggrega gli RSS di TuttoReggina e Il Tifoso Reggino, ordinando gli articoli per data e mostrando anteprima, titolo e fonte. Il testo completo resta sul sito originale, aperto nella WebView con barra e tasto Indietro.
 - La card della prossima partita usa dati LND e apre una pagina di dettaglio con barra e tasto Indietro.
-- Classifica e calendario sono serviti dal backend FastAPI, che preleva dati LND e li memorizza in SQLite. Il calendario consente di cambiare giornata e mostra i punteggi degli incontri conclusi.
+- Classifica e calendario sono recuperati direttamente da LND nel client Flutter, con cache locale sul dispositivo. Il calendario consente di cambiare giornata e mostra i punteggi degli incontri conclusi.
 - Il tema segue le impostazioni del dispositivo per impostazione predefinita; dal Profilo si può forzare il tema chiaro o scuro.
+- Le notifiche RSS usano un controllo in background ogni 30 minuti circa, gestito dal sistema operativo e subordinato alla connessione e al permesso notifiche. Il Profilo permette di disattivarle. Gli articoli già notificati sono ricordati sul dispositivo; più novità nello stesso controllo producono un riepilogo. Toccando la notifica si apre la notizia più recente. L’attivazione non invia gli articoli precedenti e vengono escluse le notizie senza data o più vecchie di 24 ore.
 - Chat e accesso sono segnaposto e non sono implementati nell'alfa. Statistiche avanzate e marcatori sono rimandati.
 
 ### Community
@@ -97,7 +98,7 @@ Nota terminologica: Google Authenticator è comunemente usato per la verifica in
 
 | Tema | Decisione attuale | Stato |
 |---|---|---|
-| Nome app | RGN News | Scelto, verifica disponibilità da fare |
+| Nome app | Amaranto Feed | Scelto, verifica disponibilità da fare |
 | Sottotitolo | Le news del calcio reggino | Confermato |
 | Pubblico | Tifosi della Reggina | Confermato |
 | Feed | Aggregatore di notizie, inizialmente via RSS | Confermato |
@@ -149,8 +150,10 @@ Scelte architetturali ancora aperte:
 - L'accesso gratuito all'API non concede automaticamente i diritti di pubblicazione dei dati in un'app: i termini API-Sports demandano all'utente la verifica e l'ottenimento delle autorizzazioni eventualmente necessarie.
 - Lo scraping dell'archivio LND è possibile ma non è l'unica strada: può rompersi se cambia il sito e i dati vanno confrontati con i Comunicati Ufficiali. In alternativa, per il banner e il calendario iniziali si può valutare l'inserimento manuale con aggiornamento settimanale.
 - Per un'alfa senza costi ricorrenti, le opzioni pratiche rimaste sono inserire i dati iniziali manualmente dai Comunicati Ufficiali oppure automatizzare l'acquisizione dal portale LND, verificando i dati con i Comunicati Ufficiali e mantenendo una cache.
-- Decisione: un backend FastAPI legge la pagina ufficiale LND e serve JSON REST al client Flutter. Fetch, parsing e cache SQLite vivono sul server; il client resta in Dart e rende le risposte API.
-- Il backend espone `/api/standings`, `/api/calendar` e `/api/overview`. Il calendario parte dalla giornata corrente esposta dalla LND e consente di navigare andata e ritorno; le giornate visitate sono salvate nel database e la cache dura sei ore.
-- Il parser usa i loghi referenziati dalla risposta LND e li serve come URL, senza copiarli negli asset dell'app. Classifica: PG, V, N, S, DR e P. Partite: data, orario, campo, squadre e risultato quando disponibile.
-- L'LND può cambiare il payload o i parametri della pagina; il backend conserva la cache e usa HTTP 503 se non ha dati validi da servire. L'archivio rimane informativo e i Comunicati Ufficiali prevalgono.
-- Stato implementazione: backend Python/FastAPI con SQLite standard library e dipendenze gestite da uv; client Flutter collegato via REST. Il banner in Feed è ancora dimostrativo. Il recupero live e i test automatici sono verificati; il backend resta da distribuire su un host HTTPS prima di pubblicare l'app.
+- Decisione aggiornata: nessun backend applicativo da ospitare. Flutter legge direttamente la pagina ufficiale LND, estrae il payload Inertia e normalizza classifica, calendario, nomi e loghi.
+- La cache locale usa SharedPreferences, separa stagioni e giornate e dura sei ore. Il refresh manuale forza una nuova richiesta; se LND non risponde, vengono mostrati gli ultimi dati validi salvati per quella richiesta e stagione, con il timestamp originale. Le giornate mai caricate richiedono una connessione.
+- Il calendario parte dalla giornata corrente LND e consente di navigare andata e ritorno. Le giornate storiche non sostituiscono la selezione della giornata corrente.
+- Il parser usa i loghi referenziati dalla risposta LND senza copiarli negli asset. Mantiene gli alias delle società e i loghi alternativi per i segnaposto generici. Classifica: PG, V, N, S, DR e P. Partite: data, orario, campo, squadre e risultato solo per incontri conclusi.
+- LND può cambiare payload o parametri: il client mostra un errore con possibilità di riprovare quando non dispone di cache valida. L'archivio rimane informativo e i Comunicati Ufficiali prevalgono.
+- News RSS e dati LND richiedono accesso ai rispettivi siti pubblici; non sono necessarie chiavi API né un database condiviso. La destinazione attuale è Android nativo; un'eventuale versione web richiederà una soluzione per le restrizioni CORS delle fonti.
+- Chat e accesso rimangono segnaposto. La cache sul dispositivo non sincronizza dati tra utenti; una futura chat richiederà un progetto separato per trasporto e persistenza dei messaggi.

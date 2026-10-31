@@ -5,4 +5,4 @@
 - Android SDK and ADB are at `/home/dff/Android/Sdk` and `/home/dff/Android/Sdk/platform-tools/adb`. `./tool/dev.sh` resolves these and selects the sole connected device, preferring a sole emulator when multiple targets exist. Set `ANDROID_SERIAL` to override the selection.
 - The Android emulator is normally already running. Check `./tool/dev.sh devices`; do not start another emulator if one is listed.
 - Codex's default command sandbox cannot start the ADB daemon (permission denied). Run ADB/device install or Flutter deploy commands with command escalation when the sandbox reports that error; use the fixed project script/path instead of searching again.
-- The emulator reaches the local API at `http://10.0.2.2:8000`. Override with `RGN_API_BASE_URL` for the local API if needed.
+- The app fetches LND and RSS data directly over HTTPS. No local API server or API base URL is needed.

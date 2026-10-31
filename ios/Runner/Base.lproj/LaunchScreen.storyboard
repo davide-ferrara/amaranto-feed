@@ -2,6 +2,7 @@
 <document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="12121" systemVersion="16G29" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" colorMatched="YES" initialViewController="01J-lp-oVM">
     <dependencies>
         <deployment identifier="iOS"/>
+        <capability name="Named colors" minToolsVersion="9.0"/>
         <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="12089"/>
     </dependencies>
     <scenes>
@@ -16,13 +17,28 @@
                     <view key="view" contentMode="scaleToFill" id="Ze5-6b-2t3">
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <imageView opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" image="LaunchImage" translatesAutoresizingMaskIntoConstraints="NO" id="YRO-k0-Ey4">
+                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchBackground" translatesAutoresizingMaskIntoConstraints="NO" id="brand-background"/>
+                            <imageView opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleAspectFit" image="LaunchImage" translatesAutoresizingMaskIntoConstraints="NO" id="YRO-k0-Ey4">
+                                <constraints>
+                                    <constraint firstAttribute="width" constant="180" id="brand-logo-width"/>
+                                    <constraint firstAttribute="height" constant="180" id="brand-logo-height"/>
+                                </constraints>
                             </imageView>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" text="AMARANTO FEED" textAlignment="center" translatesAutoresizingMaskIntoConstraints="NO" id="brand-name">
+                                <fontDescription key="fontDescription" type="boldSystem" pointSize="20"/>
+                                <color key="textColor" name="BrandLaunchText"/>
+                            </label>
                         </subviews>
-                        <color key="backgroundColor" red="1" green="1" blue="1" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                        <color key="backgroundColor" name="BrandLaunchBackground"/>
                         <constraints>
+                            <constraint firstItem="brand-background" firstAttribute="top" secondItem="Ze5-6b-2t3" secondAttribute="top" id="brand-background-top"/>
+                            <constraint firstItem="brand-background" firstAttribute="bottom" secondItem="Ze5-6b-2t3" secondAttribute="bottom" id="brand-background-bottom"/>
+                            <constraint firstItem="brand-background" firstAttribute="leading" secondItem="Ze5-6b-2t3" secondAttribute="leading" id="brand-background-leading"/>
+                            <constraint firstItem="brand-background" firstAttribute="trailing" secondItem="Ze5-6b-2t3" secondAttribute="trailing" id="brand-background-trailing"/>
                             <constraint firstItem="YRO-k0-Ey4" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="1a2-6s-vTC"/>
-                            <constraint firstItem="YRO-k0-Ey4" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="4X2-HB-R7a"/>
+                            <constraint firstItem="YRO-k0-Ey4" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" constant="-20" id="4X2-HB-R7a"/>
+                            <constraint firstItem="brand-name" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="brand-name-center"/>
+                            <constraint firstItem="brand-name" firstAttribute="top" secondItem="YRO-k0-Ey4" secondAttribute="bottom" constant="20" id="brand-name-top"/>
                         </constraints>
                     </view>
                 </viewController>
@@ -32,6 +48,13 @@
         </scene>
     </scenes>
     <resources>
-        <image name="LaunchImage" width="168" height="185"/>
+        <image name="LaunchBackground" width="1" height="256"/>
+        <image name="LaunchImage" width="180" height="180"/>
+        <namedColor name="BrandLaunchBackground">
+            <color red="0.960784" green="0.945098" blue="0.941176" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+        </namedColor>
+        <namedColor name="BrandLaunchText">
+            <color red="0.517647" green="0.070588" blue="0.188235" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+        </namedColor>
     </resources>
 </document>

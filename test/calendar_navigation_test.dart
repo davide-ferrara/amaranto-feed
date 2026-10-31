@@ -7,42 +7,20 @@ import 'package:http/testing.dart';
 import 'package:rgn_news/main.dart';
 import 'package:rgn_news/models/lnd_data.dart';
 import 'package:rgn_news/services/lnd_data_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'support/lnd_fixture.dart';
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   testWidgets('le frecce cambiano giornata e mostrano il risultato', (
     tester,
   ) async {
     final service = LndDataService(
-      baseUrl: 'https://test.example/',
       client: MockClient((request) async {
-        final round = int.parse(
-          request.url.queryParameters['round_number'] ?? '8',
-        );
+        final round = int.parse(request.url.queryParameters['giornata'] ?? '8');
         return http.Response(
-          jsonEncode({
-            'updated_at': '2026-10-15T18:00:00Z',
-            'source': 'https://test.example/',
-            'matchday': {'number': round, 'leg': 'first'},
-            'standings': [],
-            'fixtures': [
-              {
-                'id': '$round',
-                'matchday': 'first:$round',
-                'round_number': round,
-                'leg': 'first',
-                'date': '2026-10-11',
-                'time': '15:00',
-                'venue': '',
-                'address': '',
-                'home_team': 'Reggina 1914',
-                'home_logo_url': null,
-                'away_team': 'Avversaria',
-                'away_logo_url': null,
-                'home_score': round == 7 ? 1 : null,
-                'away_score': round == 7 ? 1 : null,
-              },
-            ],
-          }),
+          jsonEncode(lndPage(round: round, played: round == 7)),
           200,
           headers: {'content-type': 'application/json'},
         );

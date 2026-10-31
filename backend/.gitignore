@@ -1,3 +1,4 @@
+# Retained local data from the retired service; no backend runtime is shipped.
 .venv/
 __pycache__/
 *.py[cod]

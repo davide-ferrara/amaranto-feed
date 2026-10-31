@@ -1,9 +1,0 @@
-[project]
-name = "rgn-news-backend"
-version = "0.1.0"
-description = "REST API for RGN News: LND standings and fixtures"
-requires-python = ">=3.11"
-dependencies = [
-    "fastapi>=0.115,<1.0",
-    "uvicorn>=0.30,<1.0",
-]

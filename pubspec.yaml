@@ -1,5 +1,5 @@
 name: rgn_news
-description: "A new Flutter project."
+description: "Amaranto Feed: notizie, calendario e classifica della Reggina."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -35,6 +35,8 @@ dependencies:
   webview_flutter: ^4.14.1
   xml: ^6.6.1
   shared_preferences: ^2.5.3
+  workmanager: ^0.10.10
+  flutter_local_notifications: 21.0.0
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
@@ -61,6 +63,14 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/branding/amaranto_feed_mark.png
+    - assets/images/news_fallback_stadium.png
+    - assets/images/news_fallback_stand.png
+    - assets/images/news_fallback_corner.png
+    - assets/images/news_fallback_curva_front.png
+    - assets/images/news_fallback_curva_angle.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

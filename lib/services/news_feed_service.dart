@@ -12,6 +12,15 @@ class NewsFeedService {
 
   static const _feeds = [
     _FeedSource(
+      name: 'Reggina 1914',
+      url: 'https://www.reggina1914.it/feed/',
+      isOfficial: true,
+    ),
+    _FeedSource(
+      name: 'CityNow',
+      url: 'https://www.citynow.it/tag/reggina/feed/',
+    ),
+    _FeedSource(
       name: 'TuttoReggina',
       url: 'https://www.tuttoreggina.com/rss/?section=44',
     ),
@@ -51,7 +60,7 @@ class NewsFeedService {
     final response = await _client
         .get(
           Uri.parse(feed.url),
-          headers: const {'User-Agent': 'RGNNews/1.0 (RSS reader)'},
+          headers: const {'User-Agent': 'AmarantoFeed/1.0 (RSS reader)'},
         )
         .timeout(const Duration(seconds: 15));
 
@@ -67,13 +76,16 @@ class NewsFeedService {
           final url = item.getElement('link')?.innerText.trim() ?? '';
           final dateText = item.getElement('pubDate')?.innerText.trim() ?? '';
           final imageUrl = _imageUrl(item);
+          final publishedAt = _parseDate(dateText);
 
           return NewsArticle(
             title: title,
             url: url,
             source: feed.name,
-            publishedAt: _parseDate(dateText),
+            publishedAt: publishedAt ?? DateTime.now(),
+            hasPublicationDate: publishedAt != null,
             imageUrl: imageUrl,
+            isOfficial: feed.isOfficial,
           );
         })
         .where((article) => article.title.isNotEmpty && _isHttpUrl(article.url))
@@ -93,7 +105,7 @@ class NewsFeedService {
     return null;
   }
 
-  DateTime _parseDate(String value) {
+  DateTime? _parseDate(String value) {
     final isoDate = DateTime.tryParse(value);
     if (isoDate != null) return isoDate;
 
@@ -101,7 +113,7 @@ class NewsFeedService {
       r'(?:\w+,\s*)?(\d{1,2})\s+(\w{3})\s+(\d{4})\s+(\d{2}):(\d{2}):(\d{2})\s+(GMT|UTC|[+-]\d{4})',
       caseSensitive: false,
     ).firstMatch(value);
-    if (match == null) return DateTime.now();
+    if (match == null) return null;
 
     const months = {
       'jan': 1,
@@ -118,7 +130,7 @@ class NewsFeedService {
       'dec': 12,
     };
     final month = months[match.group(2)!.toLowerCase()];
-    if (month == null) return DateTime.now();
+    if (month == null) return null;
 
     final localTime = DateTime.utc(
       int.parse(match.group(3)!),
@@ -146,10 +158,15 @@ class NewsFeedService {
 }
 
 class _FeedSource {
-  const _FeedSource({required this.name, required this.url});
+  const _FeedSource({
+    required this.name,
+    required this.url,
+    this.isOfficial = false,
+  });
 
   final String name;
   final String url;
+  final bool isOfficial;
 }
 
 class _FeedResult {
