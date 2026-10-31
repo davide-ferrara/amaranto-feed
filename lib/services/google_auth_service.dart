@@ -1,4 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'chat_service.dart';
@@ -13,8 +15,21 @@ class GoogleAuthService {
       _googleInitialization ??= GoogleSignIn.instance.initialize();
 
   Future<UserCredential> signIn() async {
-    final credential = await _googleCredential();
-    return FirebaseAuth.instance.signInWithCredential(credential);
+    try {
+      final credential = await _googleCredential();
+      return await FirebaseAuth.instance.signInWithCredential(credential);
+    } catch (error, stack) {
+      // Record diagnostic codes only; never log accounts, tokens or credentials.
+      final code = switch (error) {
+        GoogleSignInException e => 'google/${e.code.name}',
+        FirebaseAuthException e => 'firebase/${e.code}',
+        PlatformException e => 'platform/${e.code}',
+        _ => error.runtimeType.toString(),
+      };
+      debugPrint('Google sign-in failed: $code');
+      debugPrintStack(stackTrace: stack);
+      rethrow;
+    }
   }
 
   Future<void> signOut() async {

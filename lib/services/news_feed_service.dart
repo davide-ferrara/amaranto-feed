@@ -1,10 +1,22 @@
+import 'dart:convert';
+
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:xml/xml.dart';
 
 import '../models/news_article.dart';
 
 class NewsFeedService {
-  NewsFeedService({http.Client? client}) : _client = client ?? http.Client();
+  NewsFeedService({http.Client? client, DateTime Function()? clock})
+    : _client = client ?? http.Client(),
+      _clock = clock ?? DateTime.now;
+
+  static const cacheTtl = Duration(minutes: 5);
+  static const _cacheKey = 'news_feeds_v1';
+  final DateTime Function() _clock;
+  final Map<String, _CachedFeed> _cache = {};
+  Future<List<NewsArticle>>? _inFlight;
+  bool _cacheLoaded = false;
 
   final http.Client _client;
 
@@ -30,16 +42,72 @@ class NewsFeedService {
     ),
   ];
 
-  Future<List<NewsArticle>> fetchLatest() async {
+  /// Reuses parsed feeds for five minutes. Explicit refresh bypasses the TTL.
+  /// Concurrent callers share a single fetch, including manual refreshes.
+  Future<List<NewsArticle>> fetchLatest({bool forceRefresh = false}) {
+    return _inFlight ??= _load(forceRefresh).whenComplete(() {
+      _inFlight = null;
+    });
+  }
+
+  Future<List<NewsArticle>> _load(bool forceRefresh) async {
+    SharedPreferences? preferences;
+    try {
+      preferences = await SharedPreferences.getInstance();
+      if (!_cacheLoaded) {
+        final raw = preferences.getString(_cacheKey);
+        if (raw != null) {
+          final entries = jsonDecode(raw) as Map<String, dynamic>;
+          for (final feed in _feeds) {
+            try {
+              if (entries[feed.url] != null) {
+                _cache[feed.url] = _CachedFeed.fromJson(entries[feed.url]);
+              }
+            } catch (_) {
+              // A damaged source must not discard other cached feeds.
+            }
+          }
+        }
+      }
+    } catch (_) {
+      // Storage failures must not prevent loading news.
+    }
+    _cacheLoaded = true;
+    var changed = false;
     final results = await Future.wait(
       _feeds.map((feed) async {
+        final cached = _cache[feed.url];
+        if (!forceRefresh && cached != null) {
+          final age = _clock().difference(cached.updatedAt);
+          if (!age.isNegative && age < cacheTtl) {
+            return _FeedResult(articles: cached.articles);
+          }
+        }
         try {
-          return _FeedResult(articles: await _fetchFeed(feed));
+          final articles = await _fetchFeed(feed);
+          _cache[feed.url] = _CachedFeed(_clock(), articles);
+          changed = true;
+          return _FeedResult(articles: articles);
         } catch (error) {
-          return _FeedResult(error: error);
+          return _FeedResult(
+            articles: cached?.articles ?? const [],
+            error: error,
+          );
         }
       }),
     );
+    if (changed) {
+      try {
+        await preferences?.setString(
+          _cacheKey,
+          jsonEncode({
+            for (final entry in _cache.entries) entry.key: entry.value.toJson(),
+          }),
+        );
+      } catch (_) {
+        // Keep successfully fetched articles even if persistence fails.
+      }
+    }
 
     final articles = results.expand((result) => result.articles).toList()
       ..sort((a, b) => b.publishedAt.compareTo(a.publishedAt));
@@ -47,7 +115,7 @@ class NewsFeedService {
     final uniqueArticles = articles
         .where((article) => seenUrls.add(article.url))
         .take(40)
-        .toList();
+        .toList(growable: false);
 
     if (uniqueArticles.isEmpty &&
         results.every((result) => result.error != null)) {
@@ -82,7 +150,7 @@ class NewsFeedService {
             title: title,
             url: url,
             source: feed.name,
-            publishedAt: publishedAt ?? DateTime.now(),
+            publishedAt: publishedAt ?? _clock(),
             hasPublicationDate: publishedAt != null,
             imageUrl: imageUrl,
             isOfficial: feed.isOfficial,
@@ -174,4 +242,55 @@ class _FeedResult {
 
   final List<NewsArticle> articles;
   final Object? error;
+}
+
+/// Parsed articles and freshness belong to each source independently.
+class _CachedFeed {
+  const _CachedFeed(this.updatedAt, this.articles);
+
+  final DateTime updatedAt;
+  final List<NewsArticle> articles;
+
+  factory _CachedFeed.fromJson(dynamic value) {
+    final data = value as Map<String, dynamic>;
+    return _CachedFeed(
+      DateTime.parse(data['updated_at'] as String),
+      (data['articles'] as List)
+          .map((value) {
+            final article = value as Map<String, dynamic>;
+            final url = article['url'] as String;
+            final uri = Uri.parse(url);
+            if (uri.scheme != 'https' && uri.scheme != 'http') {
+              throw const FormatException('URL non valido');
+            }
+            return NewsArticle(
+              title: article['title'] as String,
+              url: url,
+              source: article['source'] as String,
+              publishedAt: DateTime.parse(article['published_at'] as String),
+              imageUrl: article['image_url'] as String?,
+              isOfficial: article['is_official'] as bool,
+              hasPublicationDate: article['has_publication_date'] as bool,
+            );
+          })
+          .toList(growable: false),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'updated_at': updatedAt.toIso8601String(),
+    'articles': articles
+        .map(
+          (article) => {
+            'title': article.title,
+            'url': article.url,
+            'source': article.source,
+            'published_at': article.publishedAt.toIso8601String(),
+            'image_url': article.imageUrl,
+            'is_official': article.isOfficial,
+            'has_publication_date': article.hasPublicationDate,
+          },
+        )
+        .toList(),
+  };
 }
