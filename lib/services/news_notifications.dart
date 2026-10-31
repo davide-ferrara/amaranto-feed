@@ -4,12 +4,15 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
 import '../models/news_article.dart';
 import 'news_feed_service.dart';
 import 'news_notification_poll.dart';
+import 'release_update_notification_poll.dart';
+import 'release_update_service.dart';
 
 const newsCheckTask = 'it.davideferrara.amarantofeed.rss_check';
 const _channel = AndroidNotificationChannel(
@@ -17,6 +20,12 @@ const _channel = AndroidNotificationChannel(
   'Notizie Reggina',
   description: 'Nuove notizie dalle fonti RSS sulla Reggina',
   importance: Importance.defaultImportance,
+);
+const _updateChannel = AndroidNotificationChannel(
+  'app_updates',
+  'Aggiornamenti app',
+  description: 'Notifiche per gli aggiornamenti di Amaranto Feed',
+  importance: Importance.high,
 );
 const _settings = InitializationSettings(
   android: AndroidInitializationSettings('ic_news_notification'),
@@ -38,10 +47,27 @@ void newsCallbackDispatcher() {
     try {
       await plugin.initialize(settings: _settings);
       if (!await _permissionGranted(plugin)) return true;
+      await plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >()
+          ?.createNotificationChannel(_updateChannel);
       await NewsNotificationPoll(
         fetch: feed.fetchLatest,
         notify: (articles) => _showNews(plugin, articles),
       ).run();
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        final releaseService = ReleaseUpdateService();
+        try {
+          await ReleaseUpdateNotificationPoll(
+            check: (installedVersion) =>
+                releaseService.check(installedVersion: installedVersion),
+            notify: (update) => _showUpdate(plugin, update),
+          ).run(installedVersion: (await PackageInfo.fromPlatform()).version);
+        } finally {
+          releaseService.close();
+        }
+      }
       debugPrint('RSS background check completed');
       return true;
     } catch (error, stack) {
@@ -111,6 +137,33 @@ Future<void> _showNews(
   );
 }
 
+Future<void> _showUpdate(
+  FlutterLocalNotificationsPlugin plugin,
+  ReleaseUpdate update,
+) => plugin.show(
+  id: 1915,
+  title: 'Aggiornamento disponibile',
+  body: 'Amaranto Feed ${update.version} è pronto da installare.',
+  notificationDetails: NotificationDetails(
+    android: AndroidNotificationDetails(
+      _updateChannel.id,
+      _updateChannel.name,
+      channelDescription: _updateChannel.description,
+      priority: Priority.high,
+      category: AndroidNotificationCategory.system,
+      styleInformation: const BigTextStyleInformation(
+        'Tocca per scaricare e installare la nuova versione.',
+      ),
+    ),
+    iOS: const DarwinNotificationDetails(threadIdentifier: 'app_updates'),
+  ),
+  payload: jsonEncode({
+    'type': 'update',
+    'version': update.version,
+    'url': update.downloadUrl.toString(),
+  }),
+);
+
 class NewsNotifications extends ChangeNotifier {
   NewsNotifications._();
   static final instance = NewsNotifications._();
@@ -126,13 +179,41 @@ class NewsNotifications extends ChangeNotifier {
       (defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS);
 
-  Future<void> initialize(void Function(NewsArticle) onOpen) async {
+  Future<void> initialize(
+    void Function(NewsArticle) onOpen, {
+    void Function(ReleaseUpdate)? onOpenUpdate,
+  }) async {
     if (!supported) return;
     try {
       void open(String? payload) {
         if (payload == null) return;
         try {
           final data = jsonDecode(payload) as Map<String, dynamic>;
+          if (data['type'] == 'update') {
+            final version = data['version'];
+            final rawUrl = data['url'];
+            final uri = rawUrl is String ? Uri.tryParse(rawUrl) : null;
+            if (version is String &&
+                RegExp(r'^\d+\.\d+\.\d+$').hasMatch(version) &&
+                uri != null &&
+                uri.scheme == 'https' &&
+                uri.host == 'github.com' &&
+                uri.pathSegments.length == 6 &&
+                uri.pathSegments[0] ==
+                    ReleaseUpdateService.repository.split('/').first &&
+                uri.pathSegments[1] ==
+                    ReleaseUpdateService.repository.split('/').last &&
+                uri.pathSegments[2] == 'releases' &&
+                uri.pathSegments[3] == 'download' &&
+                (uri.pathSegments[4] == version ||
+                    uri.pathSegments[4] == 'v$version') &&
+                uri.pathSegments[5] == 'amaranto-feed-$version.apk') {
+              onOpenUpdate?.call(
+                ReleaseUpdate(version: version, downloadUrl: uri),
+              );
+            }
+            return;
+          }
           final uri = Uri.parse(data['url'] as String);
           if (uri.scheme != 'https' && uri.scheme != 'http') return;
           onOpen(
@@ -157,6 +238,11 @@ class NewsNotifications extends ChangeNotifier {
             AndroidFlutterLocalNotificationsPlugin
           >()
           ?.createNotificationChannel(_channel);
+      await _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >()
+          ?.createNotificationChannel(_updateChannel);
       await Workmanager().initialize(newsCallbackDispatcher);
       enabled =
           await _preferences.getBool(NewsNotificationPoll.enabledKey) ?? true;
@@ -253,7 +339,7 @@ class NewsNotifications extends ChangeNotifier {
   }
 
   Future<void> _schedule() async {
-    if (!enabled || !permissionGranted) {
+    if (!permissionGranted) {
       await Workmanager().cancelByUniqueName(newsCheckTask);
       return;
     }

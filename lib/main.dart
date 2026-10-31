@@ -11,6 +11,7 @@ import 'services/news_feed_service.dart';
 import 'services/news_fallback_images.dart';
 import 'services/news_notifications.dart';
 import 'widgets/release_update_button.dart';
+import 'widgets/release_update_install_page.dart';
 import 'widgets/chat_page.dart';
 import 'widgets/settings_page.dart';
 import 'widgets/account_page.dart';
@@ -49,13 +50,22 @@ class _AmarantoFeedAppState extends State<AmarantoFeedApp>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      NewsNotifications.instance.initialize((article) {
-        _navigatorKey.currentState?.push(
-          MaterialPageRoute<void>(
-            builder: (_) => ArticlePage(article: article),
-          ),
-        );
-      });
+      NewsNotifications.instance.initialize(
+        (article) {
+          _navigatorKey.currentState?.push(
+            MaterialPageRoute<void>(
+              builder: (_) => ArticlePage(article: article),
+            ),
+          );
+        },
+        onOpenUpdate: (update) {
+          _navigatorKey.currentState?.push(
+            MaterialPageRoute<void>(
+              builder: (_) => ReleaseUpdateInstallPage(update: update),
+            ),
+          );
+        },
+      );
     });
     SharedPreferences.getInstance().then((prefs) {
       if (mounted) {

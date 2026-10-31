@@ -1,10 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../services/release_update_service.dart';
 import '../theme/app_theme.dart';
+import 'release_update_install_page.dart';
 
 class ReleaseUpdateButton extends StatefulWidget {
   const ReleaseUpdateButton({
@@ -67,12 +67,16 @@ class _ReleaseUpdateButtonState extends State<ReleaseUpdateButton>
     setState(() => _opening = true);
     var opened = false;
     try {
-      opened = widget.openDownload != null
-          ? await widget.openDownload!(update.downloadUrl)
-          : await launchUrl(
-              update.downloadUrl,
-              mode: LaunchMode.externalApplication,
-            );
+      if (widget.openDownload != null) {
+        opened = await widget.openDownload!(update.downloadUrl);
+      } else {
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => ReleaseUpdateInstallPage(update: update),
+          ),
+        );
+        opened = true;
+      }
     } on Exception {
       opened = false;
     }

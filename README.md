@@ -42,11 +42,13 @@ The current target is the native mobile app. A browser build would need a separa
 
 ## Background news notifications
 
-The app schedules an RSS check every 30 minutes with Workmanager, requiring an internet connection. It uses local notifications and needs notification permission. Profile → **Notizie in background** enables or disables both alerts and scheduled checks. Tapping a notification opens the newest article in the app.
+The app schedules an RSS check every 30 minutes with Workmanager, requiring an internet connection. It uses local notifications and needs notification permission. Profile → **Notizie in background** enables or disables RSS alerts. Tapping a news notification opens the newest article in the app. The same scheduled worker checks GitHub releases at most once per hour and sends an update notification when a newer APK is available.
 
 Only previously unseen articles published after notifications were enabled and within the last 24 hours trigger alerts. Article URLs are remembered on-device for seven days, so relaunches and feed outages do not resend the same stories. Missing publication dates are excluded. Multiple new stories produce a single digest notification. Failed checks retry with exponential backoff; the initial launch does not send historical headlines.
 
 Android may defer checks during Doze, battery restrictions, or loss of connectivity. Swiping the app away normally leaves the job scheduled; force-stopping it in system settings suspends work until the app is opened again. Workmanager persists the job across device restarts. The app does not keep a continuous foreground service running.
+
+When an update is available, tapping its notification opens the in-app downloader and Android installer. Android may ask once to allow installs from Amaranto Feed, and the user must confirm each update in the system installer; regular apps cannot silently install their own updates.
 
 The iOS background task and notification configuration is included, but has not been built or tested in this Linux workspace. iOS chooses background execution times and cannot guarantee a 30-minute cadence. See the [Workmanager platform guide](https://docs.page/fluttercommunity/flutter_workmanager/quickstart) and [notification plugin documentation](https://pub.dev/packages/flutter_local_notifications/versions/21.0.0).
 
