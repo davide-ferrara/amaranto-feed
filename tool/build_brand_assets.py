@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BRAND = ROOT / 'assets/branding'
 BACKGROUND = '#F5F1F0'
 DARK_BACKGROUND = '#20070D'
+LAUNCHER_ICON_BACKGROUND = '#FFFFFF'
 def load_mark(filename):
     source = Image.open(BRAND / filename).convert('RGBA')
     bounds = source.getchannel('A').point(lambda value: 255 if value > 16 else 0).getbbox()
@@ -44,7 +45,8 @@ save(canvas(1024, 760, BACKGROUND), BRAND / 'amaranto_feed_icon.png')
 save(canvas(1024, 760), BRAND / 'amaranto_feed_icon_dark.png')
 res = ROOT / 'android/app/src/main/res'
 for density, factor in [('mdpi', 1), ('hdpi', 1.5), ('xhdpi', 2), ('xxhdpi', 3), ('xxxhdpi', 4)]:
-    for appearance, artwork, background in [('', mark, BACKGROUND), ('-night', mark, DARK_BACKGROUND)]:
+    for appearance, artwork in [('', mark), ('-night', mark)]:
+        background = LAUNCHER_ICON_BACKGROUND
         save(canvas(round(48 * factor), round(36 * factor), background, artwork), res / f'mipmap{appearance}-{density}/ic_launcher.png')
         # The adaptive icon's central safe circle is 66dp in a 108dp canvas.
         save(canvas(round(108 * factor), round(52 * factor), artwork=artwork), res / f'drawable{appearance}-{density}/ic_launcher_foreground.png')

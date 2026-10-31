@@ -30,7 +30,7 @@ each other in place. Existing public release builds will update in place.
    checksum file with `sha256sum`. Verify the APK signature with Android's
    `apksigner verify` tool. Keep signing files out of the release assets.
 5. Commit and push the code to `main`, then publish a GitHub release tagged
-   `v1.0.1` at that exact commit with the APK and checksum attached. Use
+   `v1.0.2` at that exact commit with the APK and checksum attached. Use
    `gh release create` with `--target` and `--notes-file` for the release notes.
 
 Publish the public update channel as a normal release, not a draft or prerelease:

@@ -16,6 +16,7 @@ Commands:
   devices   List connected Android devices/emulators
   run       Build and run on the selected Android device
   preview   Format, analyze, and relaunch on the selected Android device
+  preview-emulator  Start the existing review emulator if needed, install, and launch the app
   release   Build a signed universal release APK
   check-release  Check GitHub updates (optional installed version argument)
   install   Install the current Flutter build on the selected Android device
@@ -101,6 +102,9 @@ case "$command_name" in
     "$project_root/tool/dev.sh" format
     "$project_root/tool/dev.sh" analyze
     "$project_root/tool/dev.sh" run --no-resident "${@:2}"
+    ;;
+  preview-emulator)
+    exec "$project_root/tool/preview_emulator.sh" "${@:2}"
     ;;
   release)
     python tool/sync_native_theme.py
